@@ -17,7 +17,7 @@
 //     "autoRestartChrome": false             // default false
 //   }
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -85,9 +85,20 @@ function main() {
   writeFileSync(installOut, renderInstallCmd(config), { encoding: 'ascii' });
   console.log(`Wrote ${installOut}`);
 
+  const envLines = [`INSTALL_CMD_PATH=${installOut}`];
+
   if (config.generateUninstall !== false) {
     writeFileSync(uninstallOut, renderUninstallCmd(config), { encoding: 'ascii' });
     console.log(`Wrote ${uninstallOut}`);
+    envLines.push(`UNINSTALL_CMD_PATH=${uninstallOut}`);
+  }
+
+  // Exposes the actual rendered paths to later CI steps via $GITHUB_ENV rather than making
+  // callers reconstruct sanitizeFilename()'s output themselves -- names can contain characters
+  // (apostrophes, spaces) that are unsafe to splice into a shell command as literal text via
+  // GitHub Actions' ${{ }} interpolation, but are perfectly safe carried through as env var data.
+  if (process.env.GITHUB_ENV) {
+    appendFileSync(process.env.GITHUB_ENV, envLines.join('\n') + '\n');
   }
 }
 

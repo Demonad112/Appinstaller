@@ -5,13 +5,22 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      dest_url:
+        description: 'Destination URL for the shortcut'
+        required: false
+        default: 'https://example.com/mom'
+      shortcut_name:
+        description: 'Shortcut / file name'
+        required: false
+        default: 'Example Site'
 
 jobs:
   validate:
     runs-on: windows-latest
     env:
-      SHORTCUT_NAME: Example Site
-      DEST_URL: https://example.com/mom
+      SHORTCUT_NAME: ${{ github.event.inputs.shortcut_name || 'Example Site' }}
+      DEST_URL: ${{ github.event.inputs.dest_url || 'https://example.com/mom' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,13 +28,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Render Install/Uninstall .cmd from the fixture config
-        run: node tools/render.mjs tests/fixtures/config.json out
+      - name: Build config for this run
+        shell: pwsh
+        run: |
+          $config = [ordered]@{
+            destUrl = $env:DEST_URL
+            shortcutName = $env:SHORTCUT_NAME
+            shortcutStyle = 'App'
+            pinToolbar = $true
+            autoRestartChrome = $false
+            generateUninstall = $true
+          }
+          $config | ConvertTo-Json | Set-Content -Path run-config.json
+          Get-Content run-config.json | Write-Host
+
+      - name: Render Install/Uninstall .cmd for this run
+        run: node tools/render.mjs run-config.json out
 
       - name: Extract the PowerShell payload for linting
         shell: pwsh
         run: |
-          $text = Get-Content -Path 'out/Install-Example Site.cmd' -Raw
+          $text = Get-Content -Path $env:INSTALL_CMD_PATH -Raw
           $marker = '<' + '#PSBEGIN#' + '>'
           $idx = $text.IndexOf($marker)
           if ($idx -lt 0) { throw "PSBEGIN marker not found in rendered .cmd" }
@@ -45,7 +68,7 @@ jobs:
 
       - name: Run installer (1st run)
         shell: cmd
-        run: '"out\Install-Example Site.cmd"'
+        run: '"%INSTALL_CMD_PATH%"'
 
       - name: Verify install
         shell: pwsh
@@ -53,11 +76,11 @@ jobs:
 
       - name: Run installer (2nd run, idempotency)
         shell: cmd
-        run: '"out\Install-Example Site.cmd"'
+        run: '"%INSTALL_CMD_PATH%"'
 
       - name: Run installer (3rd run, idempotency)
         shell: cmd
-        run: '"out\Install-Example Site.cmd"'
+        run: '"%INSTALL_CMD_PATH%"'
 
       - name: Verify install is still exactly one forcelist entry
         shell: pwsh
@@ -65,14 +88,14 @@ jobs:
 
       - name: Run uninstaller
         shell: cmd
-        run: '"out\Uninstall-Example Site.cmd"'
+        run: '"%UNINSTALL_CMD_PATH%"'
 
       - name: Verify removal
         shell: pwsh
         run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL" -ExpectAbsent
 
-      - name: Upload rendered artifacts on failure
-        if: failure()
+      - name: Upload rendered artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rendered-installer
