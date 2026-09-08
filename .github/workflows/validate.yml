@@ -1,0 +1,79 @@
+name: Validate installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    env:
+      SHORTCUT_NAME: Example Site
+      DEST_URL: https://example.com/mom
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Render Install/Uninstall .cmd from the fixture config
+        run: node tools/render.mjs tests/fixtures/config.json out
+
+      - name: Extract the PowerShell payload for linting
+        shell: pwsh
+        run: |
+          $text = Get-Content -Path 'out/Install-Example Site.cmd' -Raw
+          $marker = '<' + '#PSBEGIN#' + '>'
+          $idx = $text.IndexOf($marker)
+          if ($idx -lt 0) { throw "PSBEGIN marker not found in rendered .cmd" }
+          $payload = $text.Substring($idx + $marker.Length)
+          Set-Content -Path out/installer-payload.ps1 -Value $payload
+
+      - name: Lint payload with PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path out/installer-payload.ps1 -Severity Error
+          if ($results) {
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+            throw "PSScriptAnalyzer found $($results.Count) error(s)"
+          }
+
+      - name: Run installer (1st run)
+        shell: cmd
+        run: '"out\Install-Example Site.cmd"'
+
+      - name: Verify install
+        shell: pwsh
+        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL"
+
+      - name: Run installer (2nd run, idempotency)
+        shell: cmd
+        run: '"out\Install-Example Site.cmd"'
+
+      - name: Run installer (3rd run, idempotency)
+        shell: cmd
+        run: '"out\Install-Example Site.cmd"'
+
+      - name: Verify install is still exactly one forcelist entry
+        shell: pwsh
+        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL" -ExpectedCount 1
+
+      - name: Run uninstaller
+        shell: cmd
+        run: '"out\Uninstall-Example Site.cmd"'
+
+      - name: Verify removal
+        shell: pwsh
+        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL" -ExpectAbsent
+
+      - name: Upload rendered artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-installer
+          path: out/

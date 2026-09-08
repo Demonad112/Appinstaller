@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mom Setup Builder</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <h1>Mom Setup Builder</h1>
+  <p class="lede">
+    Generates a single <code>.cmd</code> file for Windows that silently force-installs
+    uBlock Origin Lite into Chrome and adds a desktop icon pointing at one website. No wizard,
+    no click-through, no admin account required in the normal case.
+  </p>
+
+  <div class="notice ok">
+    Everything below runs in your browser. Nothing you type or upload here is sent to a
+    server &mdash; the file is generated locally and only exists on your computer.
+  </div>
+
+  <form id="config-form" class="panel">
+    <label for="dest-url">Website to open
+      <span class="hint">Full address, e.g. https://example.com</span>
+    </label>
+    <input type="url" id="dest-url" name="dest-url" placeholder="https://example.com" required>
+
+    <label for="shortcut-name">Shortcut name
+      <span class="hint">Shown under the desktop icon. Used as the downloaded file name too.</span>
+    </label>
+    <input type="text" id="shortcut-name" name="shortcut-name" placeholder="Example Site" maxlength="60" required>
+
+    <label for="icon-file">Icon (optional)
+      <span class="hint">.ico, .png, or .jpg. Leave blank to use Chrome's icon.</span>
+    </label>
+    <input type="file" id="icon-file" accept=".ico,.png,.jpg,.jpeg,image/x-icon,image/png,image/jpeg">
+
+    <label>Shortcut style</label>
+    <fieldset>
+      <legend>How the icon opens the site</legend>
+      <label><input type="radio" name="shortcut-style" value="App" checked> App window (no tabs or address bar)</label>
+      <label><input type="radio" name="shortcut-style" value="Url"> Normal browser tab</label>
+    </fieldset>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="pin-toolbar" checked>
+      <label for="pin-toolbar">Pin the ad-blocker icon to Chrome's toolbar so it's visible</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="auto-restart">
+      <label for="auto-restart">Automatically close and reopen Chrome if it's already running (otherwise it takes effect the next time Chrome opens on its own)</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="gen-uninstall" checked>
+      <label for="gen-uninstall">Also generate an Uninstall.cmd to remove everything this installs</label>
+    </div>
+
+    <button type="submit" id="generate-btn">Generate installer</button>
+  </form>
+
+  <div class="notice warn" id="error-notice" hidden></div>
+
+  <div class="panel" id="results" hidden>
+    <h2>Downloads started</h2>
+    <p>If your browser blocked the download, use the buttons below.</p>
+    <div class="downloads" id="downloads"></div>
+    <p class="hash" id="hash"></p>
+
+    <details>
+      <summary>Show the generated PowerShell (read-only)</summary>
+      <pre class="code" id="audit-pre"></pre>
+    </details>
+  </div>
+
+  <h2>Before you send it</h2>
+  <div class="panel">
+    <p><strong>One security prompt is unavoidable.</strong> Windows marks any script downloaded
+    from the internet or email with "Mark of the Web." Double-clicking it will show one
+    <em>"The publisher could not be verified. Are you sure you want to run this?"</em> dialog.
+    That's normal &mdash; a <code>.cmd</code> file can't be signed the way a real installer can.
+    To avoid it entirely: copy the file over by USB, or right-click it &rarr; Properties &rarr;
+    check "Unblock" before sending it, or run it yourself over a remote session.</p>
+    <p><strong>uBlock Origin Lite installs in "Basic" mode.</strong> Full uBlock Origin was
+    removed from the Chrome Web Store in 2026 when Chrome dropped Manifest V2 entirely, so
+    Chrome's replacement extension is used instead. Basic mode blocks ads and trackers via
+    static network rules with no configuration needed. Chrome has no policy to pre-grant the
+    broader permissions "Optimal" mode needs &mdash; that's a one-time, 3-click upgrade
+    (extension icon &rarr; mode slider &rarr; grant permission) you can do yourself during
+    handoff if Basic isn't blocking enough for a particular site.</p>
+    <p>After install, Chrome's menu will show "Managed by your organization." That's expected
+    and only refers to this one extension policy &mdash; it is not a sign anything else changed.</p>
+  </div>
+
+  <h2>Verifying it worked</h2>
+  <div class="panel">
+    <p>Full step-by-step verification (including how to prove the policy can't be clicked away)
+    is in <a href="https://github.com/Demonad112/Appinstaller/blob/main/README.md">the project
+    README</a>.</p>
+  </div>
+
+  <footer>
+    <a href="https://github.com/Demonad112/Appinstaller">Source on GitHub</a>
+  </footer>
+
+  <script src="./ico.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
