@@ -91,6 +91,10 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// A naive `file://${process.argv[1]}` comparison never matches on Windows: process.argv[1]
+// is a backslash path (D:\a\...\render.mjs) while import.meta.url is a proper file:// URL
+// (file:///D:/a/.../render.mjs), so main() would silently never run. Normalize both through
+// fileURLToPath/path.resolve instead, which handles the separator and drive-letter differences.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   main();
 }
