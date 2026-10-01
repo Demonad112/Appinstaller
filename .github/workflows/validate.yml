@@ -7,96 +7,80 @@ on:
   workflow_dispatch:
     inputs:
       dest_url:
-        description: 'Destination URL for the shortcut'
+        description: 'Destination URL for the shortcut (custom run)'
         required: false
         default: 'https://example.com/mom'
       shortcut_name:
-        description: 'Shortcut / file name'
+        description: 'Shortcut / file name (custom run)'
         required: false
         default: 'Example Site'
 
 jobs:
-  validate:
-    runs-on: windows-latest
-    env:
-      SHORTCUT_NAME: ${{ github.event.inputs.shortcut_name || 'Example Site' }}
-      DEST_URL: ${{ github.event.inputs.dest_url || 'https://example.com/mom' }}
+  catalog:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: node tests/check-catalog.mjs
 
-      - name: Build config for this run
+  scenario:
+    needs: catalog
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per tests/fixtures/<name>.json (enforced by tests/check-catalog.mjs).
+        scenario:
+          - default
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run scenario
         shell: pwsh
-        run: |
-          $config = [ordered]@{
-            destUrl = $env:DEST_URL
-            shortcutName = $env:SHORTCUT_NAME
-            shortcutStyle = 'App'
-            pinToolbar = $true
-            autoRestartChrome = $false
-            generateUninstall = $true
-          }
-          $config | ConvertTo-Json | Set-Content -Path run-config.json
-          Get-Content run-config.json | Write-Host
-
-      - name: Render Install/Uninstall .cmd for this run
-        run: node tools/render.mjs run-config.json out
-
-      - name: Extract the PowerShell payload for linting
-        shell: pwsh
-        run: |
-          $text = Get-Content -Path $env:INSTALL_CMD_PATH -Raw
-          $marker = '<' + '#PSBEGIN#' + '>'
-          $idx = $text.IndexOf($marker)
-          if ($idx -lt 0) { throw "PSBEGIN marker not found in rendered .cmd" }
-          $payload = $text.Substring($idx + $marker.Length)
-          Set-Content -Path out/installer-payload.ps1 -Value $payload
-
-      - name: Lint payload with PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          $results = Invoke-ScriptAnalyzer -Path out/installer-payload.ps1 -Severity Error
-          if ($results) {
-            $results | Format-Table -AutoSize | Out-String | Write-Host
-            throw "PSScriptAnalyzer found $($results.Count) error(s)"
-          }
-
-      - name: Run installer (1st run)
-        shell: cmd
-        run: '"%INSTALL_CMD_PATH%"'
-
-      - name: Verify install
-        shell: pwsh
-        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL"
-
-      - name: Run installer (2nd run, idempotency)
-        shell: cmd
-        run: '"%INSTALL_CMD_PATH%"'
-
-      - name: Run installer (3rd run, idempotency)
-        shell: cmd
-        run: '"%INSTALL_CMD_PATH%"'
-
-      - name: Verify install is still exactly one forcelist entry
-        shell: pwsh
-        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL" -ExpectedCount 1
-
-      - name: Run uninstaller
-        shell: cmd
-        run: '"%UNINSTALL_CMD_PATH%"'
-
-      - name: Verify removal
-        shell: pwsh
-        run: ./tests/Verify-Install.ps1 -ShortcutName "$env:SHORTCUT_NAME" -DestUrl "$env:DEST_URL" -ExpectAbsent
-
+        run: ./tests/Run-Scenario.ps1 -Fixture "tests/fixtures/${{ matrix.scenario }}.json"
       - name: Upload rendered artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rendered-installer
+          name: rendered-${{ matrix.scenario }}
+          path: out/
+
+  # On-demand real trial with user-supplied values. Inputs reach the script only as env var
+  # data, never spliced into shell text via ${{ }} (that is how CI script injection happens).
+  custom:
+    if: github.event_name == 'workflow_dispatch'
+    needs: catalog
+    runs-on: windows-latest
+    env:
+      SHORTCUT_NAME: ${{ github.event.inputs.shortcut_name }}
+      DEST_URL: ${{ github.event.inputs.dest_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build fixture from inputs
+        shell: pwsh
+        run: |
+          $config = [ordered]@{
+            modules = [ordered]@{
+              'desktop-shortcut' = [ordered]@{ destUrl = $env:DEST_URL; name = $env:SHORTCUT_NAME; style = 'App' }
+              'ublock-lite' = [ordered]@{ pinToolbar = $true; autoRestartChrome = $false }
+            }
+            generateUninstall = $true
+          }
+          $config | ConvertTo-Json -Depth 5 | Set-Content -Path custom-fixture.json
+          Get-Content custom-fixture.json | Write-Host
+      - name: Run scenario
+        shell: pwsh
+        run: ./tests/Run-Scenario.ps1 -Fixture custom-fixture.json
+      - name: Upload rendered artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-custom
           path: out/

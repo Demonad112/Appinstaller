@@ -13,14 +13,20 @@ at `https://<owner>.github.io/<repo>/`.
 
 ## How it works
 
-Everything runs client-side in the browser. `docs/index.html` + `docs/app.js` fetch the two
-PowerShell templates (`docs/installer-template.ps1`, `docs/uninstall-template.ps1`), substitute
-your URL/name/icon into their placeholders, wrap the result in a small batch/PowerShell polyglot
-header, and hand you a `.cmd` file to download. Nothing you type or upload is sent to a server.
+Everything runs client-side in the browser. The page reads `docs/catalog.json` and shows one
+checkbox card per **module** (a separately tested setup item). On generate, `docs/app.js` fetches
+`docs/core/installer-core.ps1` plus each ticked module's `docs/modules/<id>/install.ps1`,
+concatenates them in catalog order, embeds the options as one base64 JSON blob, wraps it all in a
+small batch/PowerShell polyglot header, and hands you a `.cmd` to download. Nothing you type or
+upload is sent to a server.
 
-`tools/render.mjs` performs the identical substitution in Node, so CI (`.github/workflows/validate.yml`)
-tests the exact bytes the website produces — there is exactly one copy of the payload logic
-(the two `.ps1` templates), not two copies that could drift apart.
+The assembly itself lives in exactly one place, `docs/render-core.js`, which both the browser
+and `tools/render.mjs` (CI) import, so CI tests the exact bytes the website produces.
+
+On the target machine the core decodes the options, asks each selected module whether it needs
+admin (and if any does, relaunches elevated **once**), then runs each module's `Install` step in
+order. A failing module is reported in the final message and log without silently skipping the
+others, and the run exits non-zero.
 
 ### The polyglot file
 
@@ -72,17 +78,23 @@ no temp file, and the machine's script execution policy is never touched.
 ## Repository layout
 
 ```
-docs/                     GitHub Pages root
-  index.html, app.js, ico.js, style.css     the configurator
-  installer-template.ps1, uninstall-template.ps1   the ONE source of truth for the payload
-tools/render.mjs           Node renderer (CI + local testing) — mirrors app.js exactly
+docs/                       GitHub Pages root
+  index.html, app.js, ico.js, style.css   the configurator (checklist UI)
+  catalog.json              module registry: id, label, description, order, needsAdmin, requires
+  render-core.js            THE renderer, shared by app.js and tools/render.mjs
+  core/installer-core.ps1   helpers + config decode + elevation + module runner
+  core/uninstall-core.ps1   same, for rollback
+  modules/<id>/install.ps1, uninstall.ps1   one folder per module
+tools/render.mjs            Node CLI around render-core.js (CI + local testing)
 tests/
-  fixtures/config.json     canonical test config
-  Verify-Install.ps1       asserts registry + shortcut state on a real Windows box
+  fixtures/<scenario>.json  one CI scenario each (which modules + options)
+  modules/<id>.Verify.ps1   per-module assertions (installed / idempotent / removed)
+  Run-Scenario.ps1          render -> lint -> install x3 -> verify -> uninstall -> verify
+  check-catalog.mjs         fast cross-platform consistency checks
 .github/workflows/
-  pages.yml                deploys docs/ to GitHub Pages
-  validate.yml             render → PSScriptAnalyzer → install → verify → idempotency → uninstall
-HANDOFF.md                 plain-language page to send along with the .cmd file
+  pages.yml                 deploys docs/ to GitHub Pages
+  validate.yml              catalog check, then a windows-latest job per scenario
+HANDOFF.md                  plain-language page to send along with the .cmd file
 ```
 
 ## Enabling Pages
@@ -93,11 +105,14 @@ One-time setup: **Settings → Pages → Source: GitHub Actions**. The `pages.ym
 ## Local testing
 
 ```
-node tools/render.mjs tests/fixtures/config.json out
+node tests/check-catalog.mjs                       # any OS
+node tools/render.mjs tests/fixtures/default.json out
+pwsh ./tests/Run-Scenario.ps1 -Fixture tests/fixtures/default.json   # Windows only; changes the machine
 ```
 
-Produces `out/Install-Example Site.cmd` and `out/Uninstall-Example Site.cmd` from the checked-in
-fixture. Requires an actual Windows machine (or the CI runner) to execute.
+`render.mjs` produces `out/Install-Example Site.cmd` and `out/Uninstall-Example Site.cmd` from
+the fixture. `Run-Scenario.ps1` is what CI runs: it actually installs, re-runs twice, uninstalls,
+and asserts state at each point, so only run it on a disposable machine.
 
 ## Verifying it worked (do this before handing the file off)
 

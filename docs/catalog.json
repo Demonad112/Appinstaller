@@ -1,0 +1,20 @@
+{
+  "modules": [
+    {
+      "id": "desktop-shortcut",
+      "label": "Desktop shortcut to a website",
+      "description": "Adds a desktop icon that opens one website, as an app window (no tabs or address bar) or a normal browser tab.",
+      "order": 20,
+      "needsAdmin": false,
+      "requires": []
+    },
+    {
+      "id": "ublock-lite",
+      "label": "Ad blocker for Chrome (uBlock Origin Lite)",
+      "description": "Force-installs uBlock Origin Lite via Chrome policy so it can't be accidentally disabled or removed.",
+      "order": 30,
+      "needsAdmin": false,
+      "requires": []
+    }
+  ]
+}

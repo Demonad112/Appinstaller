@@ -1,0 +1,9 @@
+{
+  "name": "appinstaller",
+  "private": true,
+  "type": "module",
+  "description": "Makes docs/render-core.js load as an ES module in Node (tools/render.mjs, tests/) as it does in the browser.",
+  "scripts": {
+    "check": "node tests/check-catalog.mjs"
+  }
+}
