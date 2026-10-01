@@ -35,8 +35,7 @@ jobs:
         scenario:
           - default
           - chrome-present
-          - chrome-fresh-winget
-          - chrome-fresh-direct
+          - chrome-fresh
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

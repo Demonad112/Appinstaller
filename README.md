@@ -5,7 +5,7 @@ with zero required interaction, sets up whichever of these **modules** you tick:
 
 | Module | What it does | Admin? |
 |---|---|---|
-| `chrome` | Installs Google Chrome for the current user if no Chrome exists (winget, falling back to Google's signed standalone installer). No-op if Chrome is present; left installed on uninstall. | No |
+| `chrome` | Installs Google Chrome for the current user if no Chrome exists (Google's signed per-user installer). No-op if Chrome is present; left installed on uninstall. | No |
 | `desktop-shortcut` | Desktop icon that opens one website in a Chrome app window (or the default browser). | No |
 | `ublock-lite` | Force-installs **uBlock Origin Lite** into Chrome via enterprise policy, so it can't be accidentally disabled or removed. | Only if a machine-wide Chrome policy already exists |
 
@@ -49,11 +49,13 @@ no temp file, and the machine's script execution policy is never touched.
 - Runs first, so the shortcut and ad-blocker modules see the newly installed Chrome.
 - Skips entirely if `chrome.exe` is found anywhere (machine-wide or per-user). It never upgrades,
   downgrades or repairs an existing Chrome.
-- Primary path: `winget install --id Google.Chrome --exact --scope user --silent ...` (pinned ID).
-- Fallback (no winget, e.g. LTSC or a stripped image, or winget failed): downloads Google's
-  per-user standalone installer (`needsadmin=false`). It runs it with `/silent /install` **only
-  if** `Get-AuthenticodeSignature` reports `Valid` with signer `O=Google LLC`. Otherwise it fails
-  closed.
+- Downloads Google's per-user standalone installer (`needsadmin=false`). It runs it with
+  `/silent /install` **only if** `Get-AuthenticodeSignature` reports `Valid` with signer
+  `O=Google LLC`. Otherwise it fails closed.
+- **Why not winget:** on `windows-latest`, `winget install Google.Chrome --scope user` fails
+  with `0x8A150010` (no applicable installer). The package only ships a machine-scope MSI,
+  which would mean a UAC prompt and an install for every account on the PC. winget remains the
+  preferred mechanism for future modules whose packages offer a user-scope installer.
 - Per-user install to `%LOCALAPPDATA%\Google\Chrome\Application`, so no UAC prompt.
 - Writes `%LOCALAPPDATA%\MomSetup\chrome-state.json` (method, path, time) when it installed Chrome.
 - **Uninstall leaves Chrome installed** on purpose. Removing a browser deletes its bookmarks
@@ -121,8 +123,8 @@ The catalog is curated. Each app is researched, built and proven on real Windows
 shows up on the page.
 
 **Admission criteria.** An app gets in only if all of these hold:
-- It has a pinned winget package ID, or a vendor download URL whose Authenticode signer can be
-  checked.
+- It has a pinned winget package ID (preferred, when it has an installer for the scope needed),
+  or a vendor download URL whose Authenticode signer can be checked.
 - It has a silent, unattended install path that has been proven on `windows-latest`.
   Interactive-only installers are rejected.
 - It has a defined uninstall behavior, even if that behavior is to deliberately leave the app

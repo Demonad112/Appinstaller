@@ -14,6 +14,6 @@
   "generateUninstall": true,
   "_ci": {
     "removeChrome": true,
-    "expectChrome": "winget"
+    "expectChrome": "direct"
   }
 }

@@ -8,7 +8,7 @@
 #
 # Fixture "_ci" keys (test-harness only, ignored by the renderer):
 #   removeChrome  uninstall the machine's Chrome first, to exercise the chrome module's install path
-#   hideWinget    strip winget from PATH while the installer runs, to exercise the direct-download fallback
+#   expectChrome  passed through to chrome.Verify.ps1 ("existing" | "direct")
 
 param(
     [Parameter(Mandatory = $true)][string]$Fixture,
@@ -51,17 +51,9 @@ function Invoke-Verify([string]$Label, [switch]$ExpectAbsent, [int]$ExpectedCoun
 
 function Invoke-Cmd([string]$Label, [string]$Path) {
     Step $Label
-    $savedPath = $env:PATH
-    try {
-        if ($ci -and $ci.hideWinget) {
-            $env:PATH = (($env:PATH -split ';') | Where-Object { $_ -and $_ -notlike '*\Microsoft\WindowsApps*' }) -join ';'
-            if (Get-Command winget -ErrorAction SilentlyContinue) { throw "hideWinget: winget still resolvable" }
-        }
-        & $Path
-        $code = $LASTEXITCODE
-    } finally {
-        $env:PATH = $savedPath
-    }
+    # Launched from pwsh on purpose: the payload must cope with inheriting pwsh's PSModulePath.
+    & $Path
+    $code = $LASTEXITCODE
     if ($code -ne 0) { Show-Logs; throw "$Label exited with code $code" }
 }
 

@@ -1,6 +1,6 @@
 # Asserts Chrome is present after install AND after uninstall (the module deliberately never
 # removes it), and that chrome-state.json matches how the scenario expects Chrome to have arrived:
-#   _ci.expectChrome = "existing" (no state file), "winget" or "direct" (state file, that method).
+#   _ci.expectChrome = "existing" (no state file) or "direct" (state file, that method).
 param(
     [Parameter(Mandatory = $true)]$Cfg,
     $Ci,

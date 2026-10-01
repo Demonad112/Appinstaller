@@ -15,6 +15,16 @@
 
 $ErrorActionPreference = 'Stop'
 
+# When the .cmd is launched from a PowerShell 7 (pwsh) window, this Windows PowerShell 5.1
+# process inherits pwsh's PSModulePath and would autoload pwsh's copies of built-in modules
+# (e.g. Microsoft.PowerShell.Security -> Get-AuthenticodeSignature), which fail to load in 5.1.
+if ($PSVersionTable.PSEdition -ne 'Core') {
+    $paths = @(($env:PSModulePath -split ';') | Where-Object { $_ -and $_ -notmatch '\\PowerShell\\' })
+    $builtin = Join-Path $PSHOME 'Modules'
+    if ($paths -notcontains $builtin) { $paths += $builtin }
+    $env:PSModulePath = $paths -join ';'
+}
+
 $ConfigB64 = '__CONFIG_B64__'
 
 $SELF = $env:SELF
