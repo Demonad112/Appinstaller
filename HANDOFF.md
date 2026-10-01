@@ -1,12 +1,16 @@
 # Setting up your computer
 
-This will do two small things and then it's done — you won't need to do anything else
-afterward.
+This sets up a few things on your computer and then it's done. You won't need to do anything
+else afterward.
 
-## What it does
+## What it may do
 
-1. Adds a little ad-blocker to Chrome so websites show fewer ads and pop-ups.
-2. Adds an icon on your Desktop that opens your website with one double-click.
+Depending on what was chosen for you:
+
+- Installs Google Chrome, if it isn't on your computer yet. This download is large, so the
+  "Setup Complete" message can take several minutes to appear. Just wait for it.
+- Adds a little ad-blocker to Chrome so websites show fewer ads and pop-ups.
+- Adds an icon on your Desktop that opens your website with one double-click.
 
 ## How to run it
 
@@ -35,4 +39,5 @@ Send that `install.log` file along when you ask for help — it says exactly wha
 ## Undoing it
 
 If you ever want to remove the ad blocker and the desktop icon, run the matching
-**Uninstall-\<name\>.cmd** file the same way (double-click it).
+**Uninstall-\<name\>.cmd** file the same way (double-click it). Chrome itself stays installed,
+so you don't lose your bookmarks.

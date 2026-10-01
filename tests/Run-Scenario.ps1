@@ -38,7 +38,7 @@ function Invoke-Verify([string]$Label, [switch]$ExpectAbsent, [int]$ExpectedCoun
     $failures = @()
     foreach ($id in $moduleIds) {
         $script = Join-Path $PSScriptRoot "modules/$id.Verify.ps1"
-        $r = @(& $script -Cfg $fixtureObj.modules.$id -ExpectAbsent:$ExpectAbsent -ExpectedCount $ExpectedCount)
+        $r = @(& $script -Cfg $fixtureObj.modules.$id -Ci $ci -ExpectAbsent:$ExpectAbsent -ExpectedCount $ExpectedCount)
         foreach ($f in $r) { if ($f) { $failures += "[$id] $f" } }
     }
     if ($failures.Count -gt 0) {

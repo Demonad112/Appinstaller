@@ -1,12 +1,13 @@
 # Appinstaller — Mom Setup Builder
 
 A GitHub Pages configurator that generates a single, self-contained Windows `.cmd` file which,
-with zero required interaction, does two things:
+with zero required interaction, sets up whichever of these **modules** you tick:
 
-1. Force-installs **uBlock Origin Lite** into Chrome via the browser's enterprise policy
-   mechanism, so it can't be accidentally disabled or removed.
-2. Creates a desktop shortcut that opens one specific website in Chrome (or the default
-   browser, if Chrome isn't installed).
+| Module | What it does | Admin? |
+|---|---|---|
+| `chrome` | Installs Google Chrome for the current user if no Chrome exists (winget, falling back to Google's signed standalone installer). No-op if Chrome is present; left installed on uninstall. | No |
+| `desktop-shortcut` | Desktop icon that opens one website in a Chrome app window (or the default browser). | No |
+| `ublock-lite` | Force-installs **uBlock Origin Lite** into Chrome via enterprise policy, so it can't be accidentally disabled or removed. | Only if a machine-wide Chrome policy already exists |
 
 **Live site:** enable GitHub Pages once — see [Enabling Pages](#enabling-pages) — then use it
 at `https://<owner>.github.io/<repo>/`.
@@ -42,6 +43,23 @@ cmd.exe's ~8191-character command-line limit. Instead the `.cmd` is:
 cmd.exe executes line 1 (which reads the file itself off disk and `iex`'s everything after the
 marker) and exits before it ever reaches the PowerShell lines below, so there's no size limit,
 no temp file, and the machine's script execution policy is never touched.
+
+### Chrome install
+
+- Runs first, so the shortcut and ad-blocker modules see the newly installed Chrome.
+- Skips entirely if `chrome.exe` is found anywhere (machine-wide or per-user). It never upgrades,
+  downgrades or repairs an existing Chrome.
+- Primary path: `winget install --id Google.Chrome --exact --scope user --silent ...` (pinned ID).
+- Fallback (no winget, e.g. LTSC or a stripped image, or winget failed): downloads Google's
+  per-user standalone installer (`needsadmin=false`). It runs it with `/silent /install` **only
+  if** `Get-AuthenticodeSignature` reports `Valid` with signer `O=Google LLC`. Otherwise it fails
+  closed.
+- Per-user install to `%LOCALAPPDATA%\Google\Chrome\Application`, so no UAC prompt.
+- Writes `%LOCALAPPDATA%\MomSetup\chrome-state.json` (method, path, time) when it installed Chrome.
+- **Uninstall leaves Chrome installed** on purpose. Removing a browser deletes its bookmarks
+  and history.
+- The download is roughly 130–170 MB, and the hidden window shows no progress. On a slow
+  connection, the final "Setup Complete" box can take several minutes to appear.
 
 ### Ad-blocker install
 
@@ -97,6 +115,37 @@ tests/
 HANDOFF.md                  plain-language page to send along with the .cmd file
 ```
 
+## Adding a module
+
+The catalog is curated. Each app is researched, built and proven on real Windows CI before it
+shows up on the page.
+
+**Admission criteria.** An app gets in only if all of these hold:
+- It has a pinned winget package ID, or a vendor download URL whose Authenticode signer can be
+  checked.
+- It has a silent, unattended install path that has been proven on `windows-latest`.
+  Interactive-only installers are rejected.
+- It has a defined uninstall behavior, even if that behavior is to deliberately leave the app
+  in place.
+- Modules that write per-user state (HKCU, Desktop, `%LOCALAPPDATA%`) never request admin. An
+  over-the-shoulder UAC elevation (a standard user typing an admin's password) runs as the
+  *admin's* profile, so per-user changes would land on the wrong account.
+
+**Checklist.**
+1. Add an entry to `docs/catalog.json` with `id`, `label`, `description`, `order`
+   (execution order), `needsAdmin` (UI badge) and `requires`.
+2. Write `docs/modules/<id>/install.ps1`. It appends `{ Id; NeedsAdmin; Install }` to
+   `$Modules`; `Install` returns the result lines shown to the user. See
+   `docs/core/installer-core.ps1` for the contract and shared helpers.
+3. Write `docs/modules/<id>/uninstall.ps1`, which appends `{ Id; Uninstall }`.
+4. If the module has options:
+   - add a `<div class="module-body" data-module="<id>">` to `docs/index.html`;
+   - add a collector to `collectors` in `docs/app.js`.
+5. Add `tests/modules/<id>.Verify.ps1`. It returns failure strings and handles `-ExpectAbsent`.
+6. Add `tests/fixtures/<scenario>.json` and list the scenario in `validate.yml`'s matrix.
+   `node tests/check-catalog.mjs` enforces steps 1–6.
+7. Push, and get the whole matrix green.
+
 ## Enabling Pages
 
 One-time setup: **Settings → Pages → Source: GitHub Actions**. The `pages.yml` workflow deploys
@@ -149,3 +198,5 @@ it in *and* that a normal click can't undo it:
   benign — it refers only to this one extension policy.
 - A domain-joined machine, or one with a pre-existing machine-wide Chrome policy, triggers the
   one-time elevated (`HKLM`) path described above, which does show a UAC prompt.
+- The Chrome module only ever installs Chrome for the user who runs the file. Run it as the
+  person who will use the computer, not from an admin account.

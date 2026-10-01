@@ -2,6 +2,7 @@
 # after install, none after uninstall.
 param(
     [Parameter(Mandatory = $true)]$Cfg,
+    $Ci,
     [switch]$ExpectAbsent,
     [int]$ExpectedCount = 1
 )

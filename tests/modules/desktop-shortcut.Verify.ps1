@@ -2,6 +2,7 @@
 # uninstall. -ExpectLnk additionally requires the Chrome app-window .lnk (not the .url fallback).
 param(
     [Parameter(Mandatory = $true)]$Cfg,
+    $Ci,
     [switch]$ExpectAbsent,
     [int]$ExpectedCount = 1
 )

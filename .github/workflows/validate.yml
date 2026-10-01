@@ -34,6 +34,9 @@ jobs:
         # One entry per tests/fixtures/<name>.json (enforced by tests/check-catalog.mjs).
         scenario:
           - default
+          - chrome-present
+          - chrome-fresh-winget
+          - chrome-fresh-direct
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,6 +71,7 @@ jobs:
         run: |
           $config = [ordered]@{
             modules = [ordered]@{
+              'chrome' = [ordered]@{}
               'desktop-shortcut' = [ordered]@{ destUrl = $env:DEST_URL; name = $env:SHORTCUT_NAME; style = 'App' }
               'ublock-lite' = [ordered]@{ pinToolbar = $true; autoRestartChrome = $false }
             }
