@@ -1,0 +1,5 @@
+{
+  "modules": { "app-adobe-reader": {} },
+  "generateUninstall": true,
+  "_ci": { "removeApps": ["adobe-reader"], "expectApp": "fresh", "expectElevated": ["app-adobe-reader"] }
+}

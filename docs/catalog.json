@@ -89,6 +89,7 @@
   ],
   "apps": [
     "7zip",
-    "vlc"
+    "vlc",
+    "adobe-reader"
   ]
 }

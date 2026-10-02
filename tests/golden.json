@@ -7,6 +7,10 @@
     "install": "7d5358453cb877cc47e4aff6a02ff5849228f8bc7a5702fc7af548cb1f8d8520",
     "uninstall": "a808f93e6d39a3fb10346f9ef4d3bedd2fd61561d1dfa4158a72bded895232ba"
   },
+  "app-adobe-reader": {
+    "install": "49b63e0747c2d3b179e802da374ba01a417fb660a43ae2c4d293f5f513d95e02",
+    "uninstall": "cbc8704815cb1e5c71c9dbfc34dd03251b421ffd9c14898871fd6312764a86a1"
+  },
   "app-blocked": {
     "install": "bb5830a8e3ef845200084b51a089bf3c1b7c0097999ad57fd9d15884480a3966",
     "uninstall": "cdfa41220d93226109838a0f9302df5d5df3eda5fe8cbbef9e53d21bfd2d0066"
