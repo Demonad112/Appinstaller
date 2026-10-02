@@ -4,6 +4,8 @@
 // docs/render-core.js -- the same module tools/render.mjs uses for the CI-tested build.
 
 import {
+  expandCatalog,
+  fragmentIds,
   renderInstall,
   renderUninstall,
   selectedModules,
@@ -167,14 +169,22 @@ const cachedText = (p) => {
   return textCache.get(p);
 };
 
-const catalogPromise = cachedText('./catalog.json').then(JSON.parse);
+// catalog.json lists the curated app ids; each app is its own docs/apps/<id>.json and becomes a
+// catalog module `app-<id>` via expandCatalog (shared with the Node renderer).
+const catalogPromise = cachedText('./catalog.json')
+  .then(JSON.parse)
+  .then(async (raw) => {
+    const defs = await Promise.all((raw.apps || []).map((id) => cachedText(`./apps/${id}.json`).then(JSON.parse)));
+    return expandCatalog(raw, Object.fromEntries((raw.apps || []).map((id, i) => [id, defs[i]])));
+  });
 cachedText('./core/installer-core.ps1'); // warm the cache while the user fills out the form
 cachedText('./core/uninstall-core.ps1');
 cachedText('./core/common.ps1');
 
-async function loadFragments(ids, kind) {
-  const texts = await Promise.all(ids.map((id) => cachedText(`./modules/${id}/${kind}.ps1`)));
-  return Object.fromEntries(ids.map((id, i) => [id, texts[i]]));
+async function loadFragments(catalog, ids, kind) {
+  const files = fragmentIds(catalog, ids);
+  const texts = await Promise.all(files.map((f) => cachedText(`./modules/${f}/${kind}.ps1`)));
+  return Object.fromEntries(files.map((f, i) => [f, texts[i]]));
 }
 
 // ---- Checklist UI -----------------------------------------------------------
@@ -305,7 +315,7 @@ form.addEventListener('submit', async (event) => {
       cachedText('./core/installer-core.ps1'),
       cachedText('./core/uninstall-core.ps1'),
       cachedText('./core/common.ps1'),
-      loadFragments(ids, 'install'),
+      loadFragments(catalog, ids, 'install'),
     ]);
     const base = outputBaseName(catalog, config);
     const installCmd = renderInstall({ core: installCore, common, catalog, fragments: installFrags, config });
@@ -317,7 +327,7 @@ form.addEventListener('submit', async (event) => {
     const hashLines = [`${installName}  sha256:${await sha256Hex(installCmd)}`];
 
     if (config.generateUninstall) {
-      const uninstallFrags = await loadFragments(ids, 'uninstall');
+      const uninstallFrags = await loadFragments(catalog, ids, 'uninstall');
       const uninstallCmd = renderUninstall({ core: uninstallCore, common, catalog, fragments: uninstallFrags, config });
       const uninstallName = `Uninstall-${base}.cmd`;
       triggerDownload(uninstallName, uninstallCmd);

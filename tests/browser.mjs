@@ -13,14 +13,14 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { renderAll } from '../tools/render.mjs';
+import { renderAll, loadCatalog } from '../tools/render.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root); // fixtures reference assets relative to the repo root
 const docs = path.join(root, 'docs');
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const golden = JSON.parse(readFileSync(path.join(root, 'tests/golden.json'), 'utf8'));
-const catalog = JSON.parse(readFileSync(path.join(docs, 'catalog.json'), 'utf8'));
+const catalog = loadCatalog(); // expanded: includes the generated app-<id> modules
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.ps1': 'text/plain' };
 const server = createServer((req, res) => {

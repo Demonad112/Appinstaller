@@ -43,14 +43,15 @@ function Invoke-Timed {
     & $Block 2>&1 | ForEach-Object { Write-Host "  $_" }
     $code = $LASTEXITCODE
     $sw.Stop()
-    Write-Host ("[{0}] exit code {1} (0x{2:X8}) in {3:N1}s" -f $Label, $code, ([uint32]([int]$code)), $sw.Elapsed.TotalSeconds) -ForegroundColor Yellow
+    $hex = '{0:X8}' -f [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$code), 0)
+    Write-Host ("[{0}] exit code {1} (0x{2}) in {3:N1}s" -f $Label, $code, $hex, $sw.Elapsed.TotalSeconds) -ForegroundColor Yellow
     return $code
 }
 
 Section 'Environment'
-$id = [Security.Principal.WindowsIdentity]::GetCurrent()
-$admin = (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-Write-Host "OS: $([Environment]::OSVersion.VersionString)  user: $($id.Name)  admin: $admin  PS: $($PSVersionTable.PSVersion)"
+$ident = [Security.Principal.WindowsIdentity]::GetCurrent()
+$admin = (New-Object Security.Principal.WindowsPrincipal($ident)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+Write-Host "OS: $([Environment]::OSVersion.VersionString)  user: $($ident.Name)  admin: $admin  PS: $($PSVersionTable.PSVersion)"
 $wg = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $wg) { Write-Host 'winget NOT FOUND on PATH' -ForegroundColor Red; exit 1 }
 Write-Host "winget: $($wg.Source)"
@@ -87,14 +88,14 @@ if ($Install) {
     $afterUser = @(Get-Arp $ArpRegex)
     Write-Host "ARP entries after --scope user attempt: $($afterUser.Count)"
     if ($afterUser.Count -gt $before.Count) {
-        Invoke-Timed 'uninstall-after-scope-user' { winget uninstall --id $Id --exact --silent --disable-interactivity } | Out-Null
+        Invoke-Timed 'uninstall-after-scope-user' { winget uninstall --id $Id --exact --silent --accept-source-agreements --disable-interactivity } | Out-Null
     }
 } else { Write-Host 'skipped (no -Install)' }
 
 if ($Install) {
     Section 'Remove pre-existing copy (so install is a real install)'
     if (@(Get-Arp $ArpRegex).Count) {
-        Invoke-Timed 'pre-uninstall' { winget uninstall --id $Id --exact --silent --disable-interactivity } | Out-Null
+        Invoke-Timed 'pre-uninstall' { winget uninstall --id $Id --exact --silent --accept-source-agreements --disable-interactivity } | Out-Null
         Write-Host "ARP entries after pre-uninstall: $(@(Get-Arp $ArpRegex).Count)"
     }
 
@@ -114,7 +115,7 @@ if ($Install) {
     Write-Host "ARP entries after 2nd install: $(@(Get-Arp $ArpRegex).Count)"
 
     Section "winget uninstall $Id"
-    Invoke-Timed 'uninstall' { winget uninstall --id $Id --exact --silent --disable-interactivity } | Out-Null
+    Invoke-Timed 'uninstall' { winget uninstall --id $Id --exact --silent --accept-source-agreements --disable-interactivity } | Out-Null
     $after = @(Get-Arp $ArpRegex)
     Write-Host "ARP entries after uninstall: $($after.Count)"
     $after | Format-List | Out-String | Write-Host
