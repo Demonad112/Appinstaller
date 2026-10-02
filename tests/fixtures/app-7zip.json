@@ -1,0 +1,5 @@
+{
+  "modules": { "app-7zip": {} },
+  "generateUninstall": true,
+  "_ci": { "removeApps": ["7zip"], "expectApp": "fresh", "expectElevated": ["app-7zip"] }
+}

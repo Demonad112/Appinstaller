@@ -17,8 +17,13 @@
 #   expectLog     regex the log must match when expectExit is non-zero
 #   seedHklmForcelist  creates a machine-wide Chrome ExtensionInstallForcelist (dummy entry) first,
 #                 so ublock-lite must write HKLM from the elevated child; removed again in finally
-#   expectElevated  whether the 1st install must have run the elevated machine phase (default
-#                 false: scenarios without a machine-wide policy must never elevate)
+#   removeApps    curated app ids (docs/apps/<id>.json) removed first (tests/Set-App.ps1), so the
+#                 install path is real even if the image ships the app (7-Zip does)
+#   preinstallApps  curated app ids installed first with winget, to test "already on the computer"
+#   expectApp     passed to app.Verify.ps1: "fresh" (default) or "existing"
+#   corruptSha256 rewrites every sha256 in the rendered .cmd's embedded config to zeros, to prove a
+#                 download that fails verification is never run (use with expectExit 1)
+#   expectElevated  true, or a list of module ids that must finish in the elevated phase
 #   holdLock      the harness holds the Appinstaller run lock while the .cmd runs (use with
 #                 expectExit 1 and expectLog 'already in progress')
 
@@ -49,8 +54,12 @@ function Invoke-Verify([string]$Label, [switch]$ExpectAbsent, [int]$ExpectedCoun
     Step "Verify: $Label"
     $failures = @()
     foreach ($id in $moduleIds) {
-        $script = Join-Path $PSScriptRoot "modules/$id.Verify.ps1"
-        $r = @(& $script -Cfg $fixtureObj.modules.$id -Ci $ci -ExpectAbsent:$ExpectAbsent -ExpectedCount $ExpectedCount)
+        if ($id -like 'app-*') {
+            $r = @(& (Join-Path $PSScriptRoot 'modules/app.Verify.ps1') -AppId ($id -replace '^app-', '') -Cfg $fixtureObj.modules.$id -Ci $ci -ExpectAbsent:$ExpectAbsent -ExpectedCount $ExpectedCount)
+        } else {
+            $script = Join-Path $PSScriptRoot "modules/$id.Verify.ps1"
+            $r = @(& $script -Cfg $fixtureObj.modules.$id -Ci $ci -ExpectAbsent:$ExpectAbsent -ExpectedCount $ExpectedCount)
+        }
         foreach ($f in $r) { if ($f) { $failures += "[$id] $f" } }
     }
     if ($failures.Count -gt 0) {
@@ -123,14 +132,19 @@ function Get-InstallLogLines {
 
 # Asserts whether the 1st install ran the elevated machine phase, that it finished its modules,
 # and that it cleaned up its run folder.
-function Assert-Phase([string[]]$NewLog, [bool]$ExpectElevated) {
+function Assert-Phase([string[]]$NewLog, $ExpectElevatedSetting) {
+    # true -> the default (ublock-lite); a list -> those module ids must finish in the child
+    $ExpectElevated = [bool]$ExpectElevatedSetting
+    $elevatedMods = if ($ExpectElevatedSetting -is [array]) { @($ExpectElevatedSetting) } else { @('ublock-lite') }
     $start = ($NewLog | Select-String -SimpleMatch 'phase=machine start' | Select-Object -First 1)
     $elevated = [bool]$start
     if ($elevated -ne $ExpectElevated) { Show-Logs; throw "Expected elevated machine phase = $ExpectElevated, got $elevated" }
     if ($elevated) {
         $afterIdx = [array]::IndexOf($NewLog, $start.Line)
         $after = $NewLog[$afterIdx..($NewLog.Count - 1)]
-        if (-not ($after -match "Module 'ublock-lite': done")) { Show-Logs; throw "Machine phase did not finish ublock-lite" }
+        foreach ($em in $elevatedMods) {
+            if (-not ($after -match "Module '$em': done")) { Show-Logs; throw "Machine phase did not finish $em" }
+        }
         if (-not ($after -match 'phase=machine end \(ok=True\)')) { Show-Logs; throw 'Machine phase did not end ok' }
         $leftover = @(Get-ChildItem -LiteralPath (Join-Path $env:ProgramData 'Appinstaller') -Directory -Filter 'run-*' -ErrorAction SilentlyContinue)
         if ($leftover.Count -gt 0) { throw "Run folder(s) not cleaned up: $($leftover.Name -join ', ')" }
@@ -144,6 +158,8 @@ try {
     # ---- Pre-conditions ---------------------------------------------------------
     if ($ci -and $ci.seedHklmForcelist) { Set-SeedForcelist }
     if ($ci -and $ci.blockHosts) { Set-BlockedHosts @($ci.blockHosts) }
+    foreach ($a in @($(if ($ci -and $ci.removeApps) { $ci.removeApps }))) { Step "Remove app $a (test setup)"; & (Join-Path $PSScriptRoot 'Set-App.ps1') -AppId $a -State absent }
+    foreach ($a in @($(if ($ci -and $ci.preinstallApps) { $ci.preinstallApps }))) { Step "Ensure app $a is present (test setup)"; & (Join-Path $PSScriptRoot 'Set-App.ps1') -AppId $a -State present }
     if ($ci -and $ci.removeChrome) {
         Step 'Remove machine Chrome (test setup)'
         & (Join-Path $PSScriptRoot 'Remove-Chrome.ps1')
@@ -166,6 +182,18 @@ try {
     Test-Payload $installCmd
     Test-Payload $uninstallCmd
 
+    if ($ci -and $ci.corruptSha256) {
+        Step 'Corrupt the embedded SHA-256 pins (tamper test)'
+        $text = Get-Content -LiteralPath $installCmd -Raw
+        $m = [regex]::Match($text, "\`$ConfigB64 = '([A-Za-z0-9+/=]+)'")
+        if (-not $m.Success) { throw 'ConfigB64 not found in the rendered install .cmd' }
+        $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.Groups[1].Value))
+        $bad = [regex]::Replace($json, '"sha256":"[0-9a-f]{64}"', ('"sha256":"' + ('0' * 64) + '"'))
+        if ($bad -eq $json) { throw 'No sha256 pin found to corrupt' }
+        $newB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bad))
+        [IO.File]::WriteAllText((Resolve-Path $installCmd), $text.Replace($m.Groups[1].Value, $newB64), (New-Object Text.UTF8Encoding($false)))
+    }
+
     # ---- Install / idempotency / uninstall -------------------------------------
     $expectExit = if ($ci -and $ci.expectExit) { [int]$ci.expectExit } else { 0 }
     if ($expectExit -ne 0) {
@@ -182,6 +210,7 @@ try {
         $log = Get-Content (Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log') -Raw
         $wantLog = if ($ci -and $ci.expectLog) { [string]$ci.expectLog } else { 'Install finished with failures' }
         if ($log -notmatch $wantLog) { throw "install.log has no line matching '$wantLog'" }
+        if ($ci -and $ci.removeApps) { Invoke-Verify 'nothing was installed' -ExpectAbsent }
         Write-Host "`nScenario passed (failure propagated, exit code $code): $Fixture" -ForegroundColor Green
         # The step's own exit status is the last native exit code; the expected failure must not leak.
         $global:LASTEXITCODE = 0
@@ -189,7 +218,7 @@ try {
     }
     $logBefore = (Get-InstallLogLines).Count
     Invoke-Cmd 'Install (1st run)' $installCmd
-    Assert-Phase @((Get-InstallLogLines) | Select-Object -Skip $logBefore) ([bool]($ci -and $ci.expectElevated))
+    Assert-Phase @((Get-InstallLogLines) | Select-Object -Skip $logBefore) $(if ($ci) { $ci.expectElevated } else { $false })
     Invoke-Verify 'after 1st install'
     Invoke-Cmd 'Install (2nd run)' $installCmd
     Invoke-Cmd 'Install (3rd run)' $installCmd

@@ -1,0 +1,15 @@
+{
+  "id": "7zip",
+  "label": "7-Zip",
+  "description": "Free file archiver (zip, 7z, rar and more). Installed for every user on this computer; may ask for administrator permission once. Does nothing if 7-Zip is already installed, and uninstall only removes it if this setup installed it.",
+  "order": 110,
+  "scope": "machine",
+  "requires": [],
+  "source": { "type": "winget", "id": "7zip.7zip" },
+  "detect": [
+    { "type": "file", "path": "%ProgramFiles%\\7-Zip\\7z.exe" },
+    { "type": "file", "path": "%ProgramFiles(x86)%\\7-Zip\\7z.exe" }
+  ],
+  "uninstall": { "type": "winget" },
+  "notes": "Probed on windows-latest (winget 1.11): NSIS exe, machine scope only (--scope user -> 0x8A150010), install ~6 s, winget uninstall ~2 s and synchronous. 7-Zip ships on the runner image, so scenarios remove it first."
+}

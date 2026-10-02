@@ -1,0 +1,21 @@
+{
+  "id": "vlc",
+  "label": "VLC media player",
+  "description": "Plays almost any video or audio file. Installed for every user on this computer; may ask for administrator permission once. Does nothing if VLC is already installed, and uninstall only removes it if this setup installed it.",
+  "order": 120,
+  "scope": "machine",
+  "requires": [],
+  "source": {
+    "type": "url",
+    "url": "https://download.videolan.org/pub/videolan/vlc/3.0.23/win64/vlc-3.0.23-win64.exe",
+    "sha256": "20ad191348684b470ddc4e05204316f3d8e39655f412b3e392a0eef97639daaf",
+    "args": ["/S"],
+    "timeoutSec": 600
+  },
+  "detect": [
+    { "type": "file", "path": "%ProgramFiles%\\VideoLAN\\VLC\\vlc.exe" },
+    { "type": "file", "path": "%ProgramFiles(x86)%\\VideoLAN\\VLC\\vlc.exe" }
+  ],
+  "uninstall": { "type": "exe", "path": "%ProgramFiles%\\VideoLAN\\VLC\\uninstall.exe", "args": ["/S"], "timeoutSec": 300 },
+  "notes": "URL source on purpose (proves the url path). sha256 is the vendor-published value (download.videolan.org/.../vlc-3.0.23-win64.exe.sha256), pinned to a version: bump url+sha256 together when VLC updates. Probe: winget VideoLAN.VLC installs this same exe in ~22 s; winget --scope user installs a portable zip instead and `winget uninstall` returned 0 without removing the machine install, so detect is file-only (winget leaves an HKCU ARP stub) and uninstall runs the NSIS uninstaller."
+}

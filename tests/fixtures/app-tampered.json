@@ -1,0 +1,5 @@
+{
+  "modules": { "app-vlc": {} },
+  "generateUninstall": true,
+  "_ci": { "removeApps": ["vlc"], "corruptSha256": true, "expectExit": 1, "expectLog": "SHA-256 mismatch", "expectApp": "fresh" }
+}

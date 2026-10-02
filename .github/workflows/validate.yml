@@ -60,6 +60,11 @@ jobs:
           - default-icon
           - machine-scope
           - run-lock
+          - app-7zip
+          - app-7zip-present
+          - app-vlc
+          - app-blocked
+          - app-tampered
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
