@@ -1,0 +1,15 @@
+{
+  "modules": {
+    "desktop-shortcut": {
+      "destUrl": "https://example.com/mom",
+      "name": "Example Site",
+      "style": "App"
+    }
+  },
+  "generateUninstall": true,
+  "_ci": {
+    "holdLock": true,
+    "expectExit": 1,
+    "expectLog": "already in progress"
+  }
+}
