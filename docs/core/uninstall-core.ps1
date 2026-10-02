@@ -1,4 +1,4 @@
-# Mom-Setup uninstaller core (rendered, not run directly)
+# Appinstaller uninstaller core (rendered, not run directly)
 # Same assembly as installer-core.ps1: the CONFIG_B64 placeholder + the selected modules'
 # docs/modules/<id>/uninstall.ps1 fragments. Each module removes exactly what its install.ps1
 # added and leaves every other policy value, shortcut, and app on the machine untouched.
@@ -11,9 +11,24 @@ $ErrorActionPreference = 'Stop'
 
 $ConfigB64 = '__CONFIG_B64__'
 
-$LogDir = Join-Path $env:LOCALAPPDATA 'MomSetup'
+$LogDir = Join-Path $env:LOCALAPPDATA 'Appinstaller'
 $LogPath = Join-Path $LogDir 'uninstall.log'
 New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
+
+# One-time migration from the pre-rename folder (older builds used 'MomSetup'): state files and
+# icons are copied across if missing so an old uninstaller / re-run still finds what it needs.
+try {
+    $OldDir = Join-Path $env:LOCALAPPDATA 'MomSetup'
+    if (Test-Path -LiteralPath $OldDir) {
+        foreach ($item in @('chrome-state.json', 'Icons')) {
+            $src = Join-Path $OldDir $item
+            $dst = Join-Path $LogDir $item
+            if ((Test-Path -LiteralPath $src) -and -not (Test-Path -LiteralPath $dst)) {
+                Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+} catch {}
 
 function Write-Log {
     param([string]$Message)

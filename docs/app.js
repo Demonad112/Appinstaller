@@ -1,4 +1,4 @@
-// Mom-Setup configurator. Everything below runs entirely in the browser: nothing typed or
+// Appinstaller configurator. Everything below runs entirely in the browser: nothing typed or
 // uploaded here is sent anywhere. It loads docs/catalog.json, renders one checklist card per
 // module, and on submit fetches the core + selected module fragments and assembles them with
 // docs/render-core.js -- the same module tools/render.mjs uses for the CI-tested build.
@@ -35,7 +35,7 @@ const collectors = {
     const style = form.querySelector('input[name="shortcut-style"]:checked').value;
     const opts = { destUrl, name, style };
     const file = document.getElementById('icon-file').files[0];
-    if (file) opts.iconB64 = bytesToBase64(await window.MomSetupIco.fileToIcoBytes(file));
+    if (file) opts.iconB64 = bytesToBase64(await window.AppinstallerIco.fileToIcoBytes(file));
     return opts;
   },
   'ublock-lite': async () => ({

@@ -1,4 +1,4 @@
-# Appinstaller — Mom Setup Builder
+# Appinstaller — Appinstaller
 
 A GitHub Pages configurator that generates a single, self-contained Windows `.cmd` file which,
 with zero required interaction, sets up whichever of these **modules** you tick:
@@ -57,7 +57,7 @@ no temp file, and the machine's script execution policy is never touched.
   which would mean a UAC prompt and an install for every account on the PC. winget remains the
   preferred mechanism for future modules whose packages offer a user-scope installer.
 - Per-user install to `%LOCALAPPDATA%\Google\Chrome\Application`, so no UAC prompt.
-- Writes `%LOCALAPPDATA%\MomSetup\chrome-state.json` (method, path, time) when it installed Chrome.
+- Writes `%LOCALAPPDATA%\Appinstaller\chrome-state.json` (method, path, time) when it installed Chrome.
 - **Uninstall leaves Chrome installed** on purpose. Removing a browser deletes its bookmarks
   and history.
 - The download is roughly 130–170 MB, and the hidden window shows no progress. On a slow

@@ -15,14 +15,18 @@ on:
         required: false
         default: 'Example Site'
 
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   catalog:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - run: node tests/check-catalog.mjs
 
   scenario:
@@ -36,17 +40,19 @@ jobs:
           - default
           - chrome-present
           - chrome-fresh
+          - chrome-blocked
+          - default-icon
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Run scenario
         shell: pwsh
         run: ./tests/Run-Scenario.ps1 -Fixture "tests/fixtures/${{ matrix.scenario }}.json"
       - name: Upload rendered artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rendered-${{ matrix.scenario }}
           path: out/
@@ -61,10 +67,10 @@ jobs:
       SHORTCUT_NAME: ${{ github.event.inputs.shortcut_name }}
       DEST_URL: ${{ github.event.inputs.dest_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Build fixture from inputs
         shell: pwsh
         run: |
@@ -83,7 +89,7 @@ jobs:
         run: ./tests/Run-Scenario.ps1 -Fixture custom-fixture.json
       - name: Upload rendered artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rendered-custom
           path: out/

@@ -1,4 +1,4 @@
-# Mom-Setup installer core (rendered, not run directly)
+# Appinstaller installer core (rendered, not run directly)
 # docs/render-core.js substitutes the CONFIG_B64 placeholder (base64 UTF-8 JSON of the selected
 # modules' options) and the MODULES placeholder (the selected modules'
 # docs/modules/<id>/install.ps1 fragments, in catalog order). Placeholder names are written
@@ -28,9 +28,24 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
 $ConfigB64 = '__CONFIG_B64__'
 
 $SELF = $env:SELF
-$LogDir = Join-Path $env:LOCALAPPDATA 'MomSetup'
+$LogDir = Join-Path $env:LOCALAPPDATA 'Appinstaller'
 $LogPath = Join-Path $LogDir 'install.log'
 New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction SilentlyContinue | Out-Null
+
+# One-time migration from the pre-rename folder (older builds used 'MomSetup'): state files and
+# icons are copied across if missing so an old uninstaller / re-run still finds what it needs.
+try {
+    $OldDir = Join-Path $env:LOCALAPPDATA 'MomSetup'
+    if (Test-Path -LiteralPath $OldDir) {
+        foreach ($item in @('chrome-state.json', 'Icons')) {
+            $src = Join-Path $OldDir $item
+            $dst = Join-Path $LogDir $item
+            if ((Test-Path -LiteralPath $src) -and -not (Test-Path -LiteralPath $dst)) {
+                Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+} catch {}
 
 function Write-Log {
     param([string]$Message)

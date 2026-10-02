@@ -1,0 +1,11 @@
+{
+  "modules": {
+    "desktop-shortcut": {
+      "destUrl": "https://example.com/mom",
+      "name": "Example Icon Site",
+      "style": "App",
+      "iconPath": "tests/assets/test.ico"
+    }
+  },
+  "generateUninstall": true
+}
