@@ -6,7 +6,8 @@
 //    comment, would get substituted too)
 //  - every fixture renders, and no placeholder survives into the output
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderAll, loadCatalog } from '../tools/render.mjs';
@@ -35,6 +36,12 @@ for (const core of ['installer-core.ps1', 'uninstall-core.ps1']) {
   }
 }
 
+const sha256 = (t) => createHash('sha256').update(t, 'utf8').digest('hex');
+const goldenPath = path.join(root, 'tests/golden.json');
+const updateGoldens = process.argv.includes('--update-goldens');
+const golden = existsSync(goldenPath) ? JSON.parse(readFileSync(goldenPath, 'utf8')) : {};
+const newGolden = {};
+
 const fixtureDir = path.join(root, 'tests/fixtures');
 const fixtures = readdirSync(fixtureDir).filter((f) => f.endsWith('.json'));
 const workflow = readFileSync(path.join(root, '.github/workflows/validate.yml'), 'utf8');
@@ -43,6 +50,7 @@ for (const f of fixtures) {
   if (!new RegExp(`^\\s*-\\s*${name}\\s*$`, 'm').test(workflow)) errors.push(`fixture ${f} is not in validate.yml's scenario matrix`);
   try {
     const { install, uninstall } = renderAll(JSON.parse(readFileSync(path.join(fixtureDir, f), 'utf8')));
+    newGolden[name] = { install: sha256(install), uninstall: uninstall ? sha256(uninstall) : null };
     for (const [kind, text] of [['install', install], ['uninstall', uninstall]]) {
       if (text && !/^@set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(text)) {
         errors.push(`${f}: ${kind} polyglot header must be one line ending in the errorlevel passthrough`);
@@ -53,6 +61,22 @@ for (const f of fixtures) {
   } catch (e) {
     errors.push(`${f}: render failed: ${e.message}`);
   }
+}
+
+// Golden hashes: the rendered .cmd bytes per fixture. Any change to a core, fragment, header or
+// the renderer shows up here; update deliberately with --update-goldens and review the diff.
+if (updateGoldens) {
+  writeFileSync(goldenPath, JSON.stringify(newGolden, null, 2) + '\n');
+  console.log('Updated tests/golden.json');
+} else {
+  for (const [name, h] of Object.entries(newGolden)) {
+    const g = golden[name];
+    if (!g) errors.push(`no golden hash for fixture '${name}' (run with --update-goldens)`);
+    else for (const k of ['install', 'uninstall']) {
+      if (g[k] !== h[k]) errors.push(`golden mismatch for ${name} ${k}: rendered output changed (expected ${g[k]}, got ${h[k]}); if intended, run node tests/check-catalog.mjs --update-goldens`);
+    }
+  }
+  for (const name of Object.keys(golden)) if (!newGolden[name]) errors.push(`golden.json has stale entry '${name}'`);
 }
 
 if (errors.length) {

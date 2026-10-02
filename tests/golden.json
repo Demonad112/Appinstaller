@@ -1,0 +1,22 @@
+{
+  "chrome-blocked": {
+    "install": "1a72a0d76397b73b2db84b512aeedf8c055aceebd089be04093aff9aeb300968",
+    "uninstall": "07b3bdb5f4ffd6fd74a830f9c108a15fc2213628c33354ec807b8e54833fde80"
+  },
+  "chrome-fresh": {
+    "install": "79c4cb0abbfb8a45b98ce25be0a241583092e4b6c998bc51003691050197d1aa",
+    "uninstall": "cb6a9e7e34adf2dc8202fa4ea4d994880a116c2509b04b0fa639826e59852cb8"
+  },
+  "chrome-present": {
+    "install": "79c4cb0abbfb8a45b98ce25be0a241583092e4b6c998bc51003691050197d1aa",
+    "uninstall": "cb6a9e7e34adf2dc8202fa4ea4d994880a116c2509b04b0fa639826e59852cb8"
+  },
+  "default-icon": {
+    "install": "8cafab05ae6fb8b13d94a2b02e9c3cd50bbcb7df528ddda479638e2f636af04f",
+    "uninstall": "df30c8a70af107b1e59c9bc7b4b6c83b501c66098c3505ff5747dbb054e1393b"
+  },
+  "default": {
+    "install": "83e896c63b4c4f8fd6f2409199302f1d1f50791eb41f92eb638daa5a07b70b09",
+    "uninstall": "349fe437f87f07694e6508c49e81a1d652101c9f830d8c35564465ce0dc4e703"
+  }
+}
