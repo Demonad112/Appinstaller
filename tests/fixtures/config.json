@@ -1,8 +1,0 @@
-{
-  "destUrl": "https://example.com/mom",
-  "shortcutName": "Example Site",
-  "shortcutStyle": "App",
-  "pinToolbar": true,
-  "autoRestartChrome": false,
-  "generateUninstall": true
-}

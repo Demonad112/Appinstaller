@@ -9,9 +9,9 @@
 <body>
   <h1>Mom Setup Builder</h1>
   <p class="lede">
-    Generates a single <code>.cmd</code> file for Windows that silently force-installs
-    uBlock Origin Lite into Chrome and adds a desktop icon pointing at one website. No wizard,
-    no click-through, no admin account required in the normal case.
+    Generates a single <code>.cmd</code> file for Windows that silently sets up the items you
+    tick below. No wizard, no click-through, and no admin account required unless an item is
+    marked otherwise.
   </p>
 
   <div class="notice ok">
@@ -20,36 +20,49 @@
   </div>
 
   <form id="config-form" class="panel">
-    <label for="dest-url">Website to open
-      <span class="hint">Full address, e.g. https://example.com</span>
-    </label>
-    <input type="url" id="dest-url" name="dest-url" placeholder="https://example.com" required>
+    <h2 class="form-title">What to set up</h2>
+    <p class="hint-text">Each item is a separately tested module. Items run in the order shown.</p>
 
-    <label for="shortcut-name">Shortcut name
-      <span class="hint">Shown under the desktop icon. Used as the downloaded file name too.</span>
-    </label>
-    <input type="text" id="shortcut-name" name="shortcut-name" placeholder="Example Site" maxlength="60" required>
+    <div id="modules">
+      <!-- Per-module option bodies. app.js adds each module's checkbox header from
+           docs/catalog.json and moves these into catalog order; a catalog module without a
+           body here simply has no options. -->
+      <div class="module-body" data-module="desktop-shortcut">
+        <label for="dest-url">Website to open
+          <span class="hint">Full address, e.g. https://example.com</span>
+        </label>
+        <input type="url" id="dest-url" name="dest-url" placeholder="https://example.com">
 
-    <label for="icon-file">Icon (optional)
-      <span class="hint">.ico, .png, or .jpg. Leave blank to use Chrome's icon.</span>
-    </label>
-    <input type="file" id="icon-file" accept=".ico,.png,.jpg,.jpeg,image/x-icon,image/png,image/jpeg">
+        <label for="shortcut-name">Shortcut name
+          <span class="hint">Shown under the desktop icon. Used as the downloaded file name too.</span>
+        </label>
+        <input type="text" id="shortcut-name" name="shortcut-name" placeholder="Example Site" maxlength="60">
 
-    <label>Shortcut style</label>
-    <fieldset>
-      <legend>How the icon opens the site</legend>
-      <label><input type="radio" name="shortcut-style" value="App" checked> App window (no tabs or address bar)</label>
-      <label><input type="radio" name="shortcut-style" value="Url"> Normal browser tab</label>
-    </fieldset>
+        <label for="icon-file">Icon (optional)
+          <span class="hint">.ico, .png, or .jpg. Leave blank to use Chrome's icon.</span>
+        </label>
+        <input type="file" id="icon-file" accept=".ico,.png,.jpg,.jpeg,image/x-icon,image/png,image/jpeg">
 
-    <div class="checkbox-row">
-      <input type="checkbox" id="pin-toolbar" checked>
-      <label for="pin-toolbar">Pin the ad-blocker icon to Chrome's toolbar so it's visible</label>
+        <fieldset>
+          <legend>How the icon opens the site</legend>
+          <label><input type="radio" name="shortcut-style" value="App" checked> App window (no tabs or address bar)</label>
+          <label><input type="radio" name="shortcut-style" value="Url"> Normal browser tab</label>
+        </fieldset>
+      </div>
+
+      <div class="module-body" data-module="ublock-lite">
+        <div class="checkbox-row">
+          <input type="checkbox" id="pin-toolbar" checked>
+          <label for="pin-toolbar">Pin the ad-blocker icon to Chrome's toolbar so it's visible</label>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="auto-restart">
+          <label for="auto-restart">Automatically close and reopen Chrome if it's already running (otherwise it takes effect the next time Chrome opens on its own)</label>
+        </div>
+      </div>
     </div>
-    <div class="checkbox-row">
-      <input type="checkbox" id="auto-restart">
-      <label for="auto-restart">Automatically close and reopen Chrome if it's already running (otherwise it takes effect the next time Chrome opens on its own)</label>
-    </div>
+
+    <h2 class="form-title">Output</h2>
     <div class="checkbox-row">
       <input type="checkbox" id="gen-uninstall" checked>
       <label for="gen-uninstall">Also generate an Uninstall.cmd to remove everything this installs</label>
@@ -103,6 +116,6 @@
   </footer>
 
   <script src="./ico.js"></script>
-  <script src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

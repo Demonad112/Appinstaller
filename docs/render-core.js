@@ -1,0 +1,93 @@
+// Shared renderer: the ONE implementation of "config -> .cmd bytes". Imported by docs/app.js
+// (browser, GitHub Pages) and tools/render.mjs (Node, CI), so the file CI validates is
+// byte-for-byte what the website hands out by construction, not by keeping two copies in sync.
+//
+// Pure functions only: callers load the text files (fetch() in the browser, readFileSync in
+// Node) and pass them in. Uses only TextEncoder/btoa, which exist in browsers and Node 16+.
+//
+// Config shape (see tests/fixtures/*.json):
+//   {
+//     "modules": {                       // key present = module selected
+//       "<module-id>": { ...module options... }
+//     },
+//     "generateUninstall": true
+//   }
+
+export const MARKER = '<' + '#PSBEGIN#' + '>';
+
+function uint8ToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export function utf8ToBase64(str) {
+  return uint8ToBase64(new TextEncoder().encode(str));
+}
+
+export function bytesToBase64(bytes) {
+  return uint8ToBase64(bytes);
+}
+
+export function sanitizeFilename(name) {
+  return String(name || '').replace(/[\\/:*?"<>|]/g, '_').trim();
+}
+
+// Download/file base name: the shortcut name when that module is selected, else a generic one.
+export function outputBaseName(config) {
+  const sc = config.modules && config.modules['desktop-shortcut'];
+  return (sc && sanitizeFilename(sc.name)) || 'Setup';
+}
+
+// Selected module ids, in catalog order (which is also execution order on the target).
+export function selectedModules(catalog, config) {
+  const chosen = config.modules || {};
+  return catalog.modules
+    .filter((m) => Object.prototype.hasOwnProperty.call(chosen, m.id))
+    .sort((a, b) => a.order - b.order)
+    .map((m) => m.id);
+}
+
+export function buildPolyglot(psPayload) {
+  const header =
+    '@set "SELF=%~f0" & @powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
+    '-Command "$c=[IO.File]::ReadAllText($env:SELF);iex $c.Substring(' +
+    "$c.IndexOf('<'+'#PSBEGIN#'+'>')+11)\" & @exit /b";
+  const normalized = psPayload.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+  return [header, MARKER, normalized].join('\r\n');
+}
+
+function assemble(coreText, ids, fragments, runtimeConfig) {
+  const body = ids
+    .map((id) => {
+      const text = fragments[id];
+      if (typeof text !== 'string') throw new Error(`Missing script fragment for module '${id}'`);
+      return `# ==== module: ${id} ====\n${text.replace(/\s+$/, '')}\n`;
+    })
+    .join('\n');
+  const configB64 = utf8ToBase64(JSON.stringify(runtimeConfig));
+  // split/join rather than String.replace: no `$&`-style special patterns in the inserted text.
+  return coreText.split('__CONFIG_B64__').join(configB64).split('__MODULES__').join(body);
+}
+
+// fragments: { [moduleId]: install.ps1 text } for (at least) every selected module.
+export function renderInstall({ core, catalog, fragments, config }) {
+  const ids = selectedModules(catalog, config);
+  const modules = {};
+  for (const id of ids) modules[id] = config.modules[id];
+  return buildPolyglot(assemble(core, ids, fragments, { modules }));
+}
+
+// Same as renderInstall, minus the icon payload the uninstaller never needs.
+export function renderUninstall({ core, catalog, fragments, config }) {
+  const ids = selectedModules(catalog, config);
+  const modules = {};
+  for (const id of ids) {
+    const { iconB64, ...rest } = config.modules[id] || {};
+    modules[id] = rest;
+  }
+  return buildPolyglot(assemble(core, ids, fragments, { modules }));
+}

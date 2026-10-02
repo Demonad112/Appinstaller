@@ -151,3 +151,47 @@ footer {
 footer a { color: var(--muted); }
 
 [hidden] { display: none !important; }
+
+/* ---- Module checklist ---------------------------------------------------- */
+h2.form-title { margin: 0 0 4px; }
+h2.form-title:not(:first-child) { margin-top: 24px; }
+.hint-text { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+
+.module {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+.module.off { opacity: 0.75; }
+.module-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.module-head input { margin: 0; }
+.module-desc { color: var(--muted); font-size: 0.83rem; margin: 4px 0 0 24px; }
+.module-warn {
+  font-size: 0.8rem;
+  margin: 8px 0 0 24px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+}
+.module-body { margin: 10px 0 0 24px; }
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+}
+
+@media (max-width: 520px) {
+  .module-desc, .module-warn, .module-body { margin-left: 0; }
+}

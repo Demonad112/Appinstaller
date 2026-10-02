@@ -1,0 +1,14 @@
+{
+  "modules": {
+    "desktop-shortcut": {
+      "destUrl": "https://example.com/mom",
+      "name": "Example Site",
+      "style": "App"
+    },
+    "ublock-lite": {
+      "pinToolbar": true,
+      "autoRestartChrome": false
+    }
+  },
+  "generateUninstall": true
+}

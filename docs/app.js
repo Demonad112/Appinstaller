@@ -1,188 +1,228 @@
 // Mom-Setup configurator. Everything below runs entirely in the browser: nothing typed or
-// uploaded here is sent anywhere. It fetches the two PowerShell templates (the same files
-// tools/render.mjs uses for the CI-tested build) and performs the identical placeholder
-// substitution client-side, then wraps the result in a batch/PowerShell polyglot header so
-// the download is a single double-clickable .cmd file.
+// uploaded here is sent anywhere. It loads docs/catalog.json, renders one checklist card per
+// module, and on submit fetches the core + selected module fragments and assembles them with
+// docs/render-core.js -- the same module tools/render.mjs uses for the CI-tested build.
 
-(function () {
-  const MARKER = '<' + '#PSBEGIN#' + '>';
-  const EXT_ID = 'ddkjiahejlhfcafbddmgiahcphecmpfh'; // uBlock Origin Lite, Chrome Web Store
+import {
+  renderInstall,
+  renderUninstall,
+  selectedModules,
+  outputBaseName,
+  sanitizeFilename,
+  bytesToBase64,
+} from './render-core.js';
 
-  const form = document.getElementById('config-form');
-  const urlInput = document.getElementById('dest-url');
-  const nameInput = document.getElementById('shortcut-name');
-  const iconInput = document.getElementById('icon-file');
-  const generateBtn = document.getElementById('generate-btn');
-  const resultsPanel = document.getElementById('results');
-  const downloadsDiv = document.getElementById('downloads');
-  const hashDiv = document.getElementById('hash');
-  const auditPre = document.getElementById('audit-pre');
-  const errorNotice = document.getElementById('error-notice');
+const form = document.getElementById('config-form');
+const modulesDiv = document.getElementById('modules');
+const generateBtn = document.getElementById('generate-btn');
+const resultsPanel = document.getElementById('results');
+const downloadsDiv = document.getElementById('downloads');
+const hashDiv = document.getElementById('hash');
+const auditPre = document.getElementById('audit-pre');
+const errorNotice = document.getElementById('error-notice');
 
-  let templatesPromise = null;
-  function loadTemplates() {
-    if (!templatesPromise) {
-      templatesPromise = Promise.all([
-        fetch('./installer-template.ps1').then((r) => r.text()),
-        fetch('./uninstall-template.ps1').then((r) => r.text()),
-      ]);
-    }
-    return templatesPromise;
-  }
-  loadTemplates(); // warm the cache while the user fills out the form
-
-  // ---- Prefill from ?url=&name= ------------------------------------------
-  const params = new URLSearchParams(location.search);
-  if (params.get('url')) urlInput.value = params.get('url');
-  if (params.get('name')) nameInput.value = params.get('name');
-
-  // ---- Small encoding helpers ---------------------------------------------
-  function uint8ToBase64(bytes) {
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-    }
-    return btoa(binary);
-  }
-
-  function utf8ToBase64(str) {
-    return uint8ToBase64(new TextEncoder().encode(str));
-  }
-
-  function toPsBool(v) {
-    return v ? '$true' : '$false';
-  }
-
-  function sanitizeFilename(name) {
-    const cleaned = name.replace(/[\\/:*?"<>|]/g, '_').trim();
-    return cleaned || 'Website';
-  }
-
-  async function sha256Hex(text) {
-    const bytes = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  // ---- Polyglot assembly, mirroring tools/render.mjs exactly ---------------
-  function buildPolyglotHeader() {
-    return (
-      '@set "SELF=%~f0" & @powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
-      '-Command "$c=[IO.File]::ReadAllText($env:SELF);iex $c.Substring(' +
-      "$c.IndexOf('<'+'#PSBEGIN#'+'>')+11)\" & @exit /b"
-    );
-  }
-
-  function buildPolyglot(psPayload) {
-    const normalized = psPayload.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
-    return [buildPolyglotHeader(), MARKER, normalized].join('\r\n');
-  }
-
-  function replaceAll(str, token, value) {
-    return str.split(token).join(value);
-  }
-
-  function renderInstall(template, config, iconB64) {
-    let out = template;
-    out = replaceAll(out, '__DEST_URL_B64__', utf8ToBase64(config.destUrl));
-    out = replaceAll(out, '__SHORTCUT_NAME_B64__', utf8ToBase64(config.shortcutName));
-    out = replaceAll(out, '__ICON_B64__', iconB64 || '');
-    out = replaceAll(out, '__SHORTCUT_STYLE__', config.shortcutStyle);
-    out = replaceAll(out, '__PIN_TOOLBAR__', toPsBool(config.pinToolbar));
-    out = replaceAll(out, '__AUTO_RESTART_CHROME__', toPsBool(config.autoRestartChrome));
-    return out;
-  }
-
-  function renderUninstall(template, config) {
-    return replaceAll(template, '__SHORTCUT_NAME_B64__', utf8ToBase64(config.shortcutName));
-  }
-
-  function triggerDownload(filename, text) {
-    const blob = new Blob([text], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    return blob;
-  }
-
-  function showError(message) {
-    errorNotice.textContent = message;
-    errorNotice.hidden = false;
-    resultsPanel.hidden = true;
-  }
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    errorNotice.hidden = true;
-
-    const destUrl = urlInput.value.trim();
+// ---- Per-module option collectors ------------------------------------------
+// One entry per catalog module that has options in index.html. Returns the module's options
+// object (exactly what docs/modules/<id>/install.ps1 receives as $Cfg) or throws a message
+// for the user. Modules without an entry are selected with {} as their options.
+const collectors = {
+  'desktop-shortcut': async () => {
+    const destUrl = document.getElementById('dest-url').value.trim();
     if (!/^https?:\/\/.+/i.test(destUrl)) {
-      showError('Please enter a full web address starting with http:// or https://');
-      return;
+      throw new Error('Please enter a full web address starting with http:// or https://');
     }
-    const shortcutName = sanitizeFilename(nameInput.value.trim() || 'Website');
-    const shortcutStyle = form.querySelector('input[name="shortcut-style"]:checked').value;
-    const pinToolbar = document.getElementById('pin-toolbar').checked;
-    const autoRestartChrome = document.getElementById('auto-restart').checked;
-    const generateUninstall = document.getElementById('gen-uninstall').checked;
+    const name = sanitizeFilename(document.getElementById('shortcut-name').value) || 'Website';
+    const style = form.querySelector('input[name="shortcut-style"]:checked').value;
+    const opts = { destUrl, name, style };
+    const file = document.getElementById('icon-file').files[0];
+    if (file) opts.iconB64 = bytesToBase64(await window.MomSetupIco.fileToIcoBytes(file));
+    return opts;
+  },
+  'ublock-lite': async () => ({
+    pinToolbar: document.getElementById('pin-toolbar').checked,
+    autoRestartChrome: document.getElementById('auto-restart').checked,
+  }),
+};
 
-    generateBtn.disabled = true;
-    generateBtn.textContent = 'Generating...';
-
-    try {
-      const [installTemplate, uninstallTemplate] = await loadTemplates();
-
-      let iconB64 = '';
-      const file = iconInput.files[0];
-      if (file) {
-        const icoBytes = await window.MomSetupIco.fileToIcoBytes(file);
-        iconB64 = uint8ToBase64(icoBytes);
-      }
-
-      const config = { destUrl, shortcutName, shortcutStyle, pinToolbar, autoRestartChrome };
-      const installPs = renderInstall(installTemplate, config, iconB64);
-      const installCmd = buildPolyglot(installPs);
-
-      downloadsDiv.innerHTML = '';
-      const installBlob = triggerDownload(`Install-${shortcutName}.cmd`, installCmd);
-      const installBtn = document.createElement('button');
-      installBtn.type = 'button';
-      installBtn.className = 'secondary';
-      installBtn.textContent = `Download Install-${shortcutName}.cmd again`;
-      installBtn.addEventListener('click', () => triggerDownload(`Install-${shortcutName}.cmd`, installCmd));
-      downloadsDiv.appendChild(installBtn);
-
-      let hashLines = [`Install-${shortcutName}.cmd  sha256:${await sha256Hex(installCmd)}`];
-
-      if (generateUninstall) {
-        const uninstallPs = renderUninstall(uninstallTemplate, config);
-        const uninstallCmd = buildPolyglot(uninstallPs);
-        triggerDownload(`Uninstall-${shortcutName}.cmd`, uninstallCmd);
-        const uninstallBtn = document.createElement('button');
-        uninstallBtn.type = 'button';
-        uninstallBtn.className = 'secondary';
-        uninstallBtn.textContent = `Download Uninstall-${shortcutName}.cmd again`;
-        uninstallBtn.addEventListener('click', () => triggerDownload(`Uninstall-${shortcutName}.cmd`, uninstallCmd));
-        downloadsDiv.appendChild(uninstallBtn);
-        hashLines.push(`Uninstall-${shortcutName}.cmd  sha256:${await sha256Hex(uninstallCmd)}`);
-      }
-
-      hashDiv.textContent = hashLines.join('\n');
-      auditPre.textContent = installPs;
-      resultsPanel.hidden = false;
-    } catch (err) {
-      console.error(err);
-      showError('Something went wrong generating the installer: ' + (err && err.message ? err.message : err));
-    } finally {
-      generateBtn.disabled = false;
-      generateBtn.textContent = 'Generate installer';
-    }
+// ---- Loading ----------------------------------------------------------------
+const fetchText = (p) =>
+  fetch(p).then((r) => {
+    if (!r.ok) throw new Error(`Couldn't load ${p} (${r.status})`);
+    return r.text();
   });
-})();
+const textCache = new Map();
+const cachedText = (p) => {
+  if (!textCache.has(p)) textCache.set(p, fetchText(p));
+  return textCache.get(p);
+};
+
+const catalogPromise = cachedText('./catalog.json').then(JSON.parse);
+cachedText('./core/installer-core.ps1'); // warm the cache while the user fills out the form
+cachedText('./core/uninstall-core.ps1');
+
+async function loadFragments(ids, kind) {
+  const texts = await Promise.all(ids.map((id) => cachedText(`./modules/${id}/${kind}.ps1`)));
+  return Object.fromEntries(ids.map((id, i) => [id, texts[i]]));
+}
+
+// ---- Checklist UI -----------------------------------------------------------
+const params = new URLSearchParams(location.search);
+
+function renderChecklist(catalog) {
+  const bodies = new Map(
+    [...modulesDiv.querySelectorAll('.module-body')].map((el) => [el.dataset.module, el]),
+  );
+  const ordered = [...catalog.modules].sort((a, b) => a.order - b.order);
+  for (const m of ordered) {
+    const card = document.createElement('section');
+    card.className = 'module';
+    card.dataset.module = m.id;
+
+    const head = document.createElement('label');
+    head.className = 'module-head';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'module-toggle';
+    box.value = m.id;
+    box.checked = m.default !== false;
+    const title = document.createElement('span');
+    title.className = 'module-title';
+    title.textContent = m.label;
+    head.append(box, title);
+    if (m.needsAdmin) {
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = 'asks for admin';
+      badge.title = 'Shows one Windows "allow changes?" prompt when it runs';
+      head.append(badge);
+    }
+    const desc = document.createElement('p');
+    desc.className = 'module-desc';
+    desc.textContent = m.description;
+
+    const warn = document.createElement('p');
+    warn.className = 'module-warn';
+    warn.hidden = true;
+
+    card.append(head, desc, warn);
+    const body = bodies.get(m.id);
+    if (body) card.append(body);
+    modulesDiv.append(card);
+  }
+  // Drop option bodies for modules no longer in the catalog.
+  for (const [id, el] of bodies) if (!catalog.modules.some((m) => m.id === id)) el.remove();
+
+  const sync = () => {
+    const on = new Set([...modulesDiv.querySelectorAll('.module-toggle:checked')].map((b) => b.value));
+    for (const card of modulesDiv.querySelectorAll('.module')) {
+      const m = catalog.modules.find((x) => x.id === card.dataset.module);
+      card.classList.toggle('off', !on.has(m.id));
+      const body = card.querySelector('.module-body');
+      if (body) body.hidden = !on.has(m.id);
+      const missing = (m.requires || []).filter((r) => !on.has(r));
+      const warn = card.querySelector('.module-warn');
+      warn.hidden = !on.has(m.id) || missing.length === 0;
+      warn.textContent = missing
+        .map((r) => {
+          const req = catalog.modules.find((x) => x.id === r);
+          return `Works only if "${req ? req.label : r}" is already on the computer — tick it above to guarantee that, otherwise this step is skipped where it's missing.`;
+        })
+        .join(' ');
+    }
+  };
+  modulesDiv.addEventListener('change', sync);
+  sync();
+}
+
+catalogPromise
+  .then((catalog) => {
+    renderChecklist(catalog);
+    // Prefill from ?url=&name=
+    if (params.get('url')) document.getElementById('dest-url').value = params.get('url');
+    if (params.get('name')) document.getElementById('shortcut-name').value = params.get('name');
+  })
+  .catch((err) => showError('Could not load the list of setup items: ' + err.message));
+
+// ---- Output -----------------------------------------------------------------
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function triggerDownload(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function addRedownloadButton(filename, text) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'secondary';
+  btn.textContent = `Download ${filename} again`;
+  btn.addEventListener('click', () => triggerDownload(filename, text));
+  downloadsDiv.appendChild(btn);
+}
+
+function showError(message) {
+  errorNotice.textContent = message;
+  errorNotice.hidden = false;
+  resultsPanel.hidden = true;
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  errorNotice.hidden = true;
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Generating...';
+
+  try {
+    const catalog = await catalogPromise;
+    const chosen = [...modulesDiv.querySelectorAll('.module-toggle:checked')].map((b) => b.value);
+    if (chosen.length === 0) throw new Error('Tick at least one item to set up.');
+
+    const config = { modules: {}, generateUninstall: document.getElementById('gen-uninstall').checked };
+    for (const id of chosen) config.modules[id] = collectors[id] ? await collectors[id]() : {};
+
+    const ids = selectedModules(catalog, config);
+    const [installCore, uninstallCore, installFrags] = await Promise.all([
+      cachedText('./core/installer-core.ps1'),
+      cachedText('./core/uninstall-core.ps1'),
+      loadFragments(ids, 'install'),
+    ]);
+    const base = outputBaseName(config);
+    const installCmd = renderInstall({ core: installCore, catalog, fragments: installFrags, config });
+
+    downloadsDiv.innerHTML = '';
+    const installName = `Install-${base}.cmd`;
+    triggerDownload(installName, installCmd);
+    addRedownloadButton(installName, installCmd);
+    const hashLines = [`${installName}  sha256:${await sha256Hex(installCmd)}`];
+
+    if (config.generateUninstall) {
+      const uninstallFrags = await loadFragments(ids, 'uninstall');
+      const uninstallCmd = renderUninstall({ core: uninstallCore, catalog, fragments: uninstallFrags, config });
+      const uninstallName = `Uninstall-${base}.cmd`;
+      triggerDownload(uninstallName, uninstallCmd);
+      addRedownloadButton(uninstallName, uninstallCmd);
+      hashLines.push(`${uninstallName}  sha256:${await sha256Hex(uninstallCmd)}`);
+    }
+
+    hashDiv.textContent = hashLines.join('\n');
+    auditPre.textContent = installCmd.slice(installCmd.indexOf('\n') + 1);
+    resultsPanel.hidden = false;
+  } catch (err) {
+    console.error(err);
+    showError(err && err.message ? err.message : String(err));
+  } finally {
+    generateBtn.disabled = false;
+    generateBtn.textContent = 'Generate installer';
+  }
+});

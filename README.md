@@ -1,26 +1,33 @@
 # Appinstaller — Mom Setup Builder
 
 A GitHub Pages configurator that generates a single, self-contained Windows `.cmd` file which,
-with zero required interaction, does two things:
+with zero required interaction, sets up whichever of these **modules** you tick:
 
-1. Force-installs **uBlock Origin Lite** into Chrome via the browser's enterprise policy
-   mechanism, so it can't be accidentally disabled or removed.
-2. Creates a desktop shortcut that opens one specific website in Chrome (or the default
-   browser, if Chrome isn't installed).
+| Module | What it does | Admin? |
+|---|---|---|
+| `chrome` | Installs Google Chrome for the current user if no Chrome exists (Google's signed per-user installer). No-op if Chrome is present; left installed on uninstall. | No |
+| `desktop-shortcut` | Desktop icon that opens one website in a Chrome app window (or the default browser). | No |
+| `ublock-lite` | Force-installs **uBlock Origin Lite** into Chrome via enterprise policy, so it can't be accidentally disabled or removed. | Only if a machine-wide Chrome policy already exists |
 
 **Live site:** enable GitHub Pages once — see [Enabling Pages](#enabling-pages) — then use it
 at `https://<owner>.github.io/<repo>/`.
 
 ## How it works
 
-Everything runs client-side in the browser. `docs/index.html` + `docs/app.js` fetch the two
-PowerShell templates (`docs/installer-template.ps1`, `docs/uninstall-template.ps1`), substitute
-your URL/name/icon into their placeholders, wrap the result in a small batch/PowerShell polyglot
-header, and hand you a `.cmd` file to download. Nothing you type or upload is sent to a server.
+Everything runs client-side in the browser. The page reads `docs/catalog.json` and shows one
+checkbox card per **module** (a separately tested setup item). On generate, `docs/app.js` fetches
+`docs/core/installer-core.ps1` plus each ticked module's `docs/modules/<id>/install.ps1`,
+concatenates them in catalog order, embeds the options as one base64 JSON blob, wraps it all in a
+small batch/PowerShell polyglot header, and hands you a `.cmd` to download. Nothing you type or
+upload is sent to a server.
 
-`tools/render.mjs` performs the identical substitution in Node, so CI (`.github/workflows/validate.yml`)
-tests the exact bytes the website produces — there is exactly one copy of the payload logic
-(the two `.ps1` templates), not two copies that could drift apart.
+The assembly itself lives in exactly one place, `docs/render-core.js`, which both the browser
+and `tools/render.mjs` (CI) import, so CI tests the exact bytes the website produces.
+
+On the target machine the core decodes the options, asks each selected module whether it needs
+admin (and if any does, relaunches elevated **once**), then runs each module's `Install` step in
+order. A failing module is reported in the final message and log without silently skipping the
+others, and the run exits non-zero.
 
 ### The polyglot file
 
@@ -36,6 +43,25 @@ cmd.exe's ~8191-character command-line limit. Instead the `.cmd` is:
 cmd.exe executes line 1 (which reads the file itself off disk and `iex`'s everything after the
 marker) and exits before it ever reaches the PowerShell lines below, so there's no size limit,
 no temp file, and the machine's script execution policy is never touched.
+
+### Chrome install
+
+- Runs first, so the shortcut and ad-blocker modules see the newly installed Chrome.
+- Skips entirely if `chrome.exe` is found anywhere (machine-wide or per-user). It never upgrades,
+  downgrades or repairs an existing Chrome.
+- Downloads Google's per-user standalone installer (`needsadmin=false`). It runs it with
+  `/silent /install` **only if** `Get-AuthenticodeSignature` reports `Valid` with signer
+  `O=Google LLC`. Otherwise it fails closed.
+- **Why not winget:** on `windows-latest`, `winget install Google.Chrome --scope user` fails
+  with `0x8A150010` (no applicable installer). The package only ships a machine-scope MSI,
+  which would mean a UAC prompt and an install for every account on the PC. winget remains the
+  preferred mechanism for future modules whose packages offer a user-scope installer.
+- Per-user install to `%LOCALAPPDATA%\Google\Chrome\Application`, so no UAC prompt.
+- Writes `%LOCALAPPDATA%\MomSetup\chrome-state.json` (method, path, time) when it installed Chrome.
+- **Uninstall leaves Chrome installed** on purpose. Removing a browser deletes its bookmarks
+  and history.
+- The download is roughly 130–170 MB, and the hidden window shows no progress. On a slow
+  connection, the final "Setup Complete" box can take several minutes to appear.
 
 ### Ad-blocker install
 
@@ -72,18 +98,55 @@ no temp file, and the machine's script execution policy is never touched.
 ## Repository layout
 
 ```
-docs/                     GitHub Pages root
-  index.html, app.js, ico.js, style.css     the configurator
-  installer-template.ps1, uninstall-template.ps1   the ONE source of truth for the payload
-tools/render.mjs           Node renderer (CI + local testing) — mirrors app.js exactly
+docs/                       GitHub Pages root
+  index.html, app.js, ico.js, style.css   the configurator (checklist UI)
+  catalog.json              module registry: id, label, description, order, needsAdmin, requires
+  render-core.js            THE renderer, shared by app.js and tools/render.mjs
+  core/installer-core.ps1   helpers + config decode + elevation + module runner
+  core/uninstall-core.ps1   same, for rollback
+  modules/<id>/install.ps1, uninstall.ps1   one folder per module
+tools/render.mjs            Node CLI around render-core.js (CI + local testing)
 tests/
-  fixtures/config.json     canonical test config
-  Verify-Install.ps1       asserts registry + shortcut state on a real Windows box
+  fixtures/<scenario>.json  one CI scenario each (which modules + options)
+  modules/<id>.Verify.ps1   per-module assertions (installed / idempotent / removed)
+  Run-Scenario.ps1          render -> lint -> install x3 -> verify -> uninstall -> verify
+  check-catalog.mjs         fast cross-platform consistency checks
 .github/workflows/
-  pages.yml                deploys docs/ to GitHub Pages
-  validate.yml             render → PSScriptAnalyzer → install → verify → idempotency → uninstall
-HANDOFF.md                 plain-language page to send along with the .cmd file
+  pages.yml                 deploys docs/ to GitHub Pages
+  validate.yml              catalog check, then a windows-latest job per scenario
+HANDOFF.md                  plain-language page to send along with the .cmd file
 ```
+
+## Adding a module
+
+The catalog is curated. Each app is researched, built and proven on real Windows CI before it
+shows up on the page.
+
+**Admission criteria.** An app gets in only if all of these hold:
+- It has a pinned winget package ID (preferred, when it has an installer for the scope needed),
+  or a vendor download URL whose Authenticode signer can be checked.
+- It has a silent, unattended install path that has been proven on `windows-latest`.
+  Interactive-only installers are rejected.
+- It has a defined uninstall behavior, even if that behavior is to deliberately leave the app
+  in place.
+- Modules that write per-user state (HKCU, Desktop, `%LOCALAPPDATA%`) never request admin. An
+  over-the-shoulder UAC elevation (a standard user typing an admin's password) runs as the
+  *admin's* profile, so per-user changes would land on the wrong account.
+
+**Checklist.**
+1. Add an entry to `docs/catalog.json` with `id`, `label`, `description`, `order`
+   (execution order), `needsAdmin` (UI badge) and `requires`.
+2. Write `docs/modules/<id>/install.ps1`. It appends `{ Id; NeedsAdmin; Install }` to
+   `$Modules`; `Install` returns the result lines shown to the user. See
+   `docs/core/installer-core.ps1` for the contract and shared helpers.
+3. Write `docs/modules/<id>/uninstall.ps1`, which appends `{ Id; Uninstall }`.
+4. If the module has options:
+   - add a `<div class="module-body" data-module="<id>">` to `docs/index.html`;
+   - add a collector to `collectors` in `docs/app.js`.
+5. Add `tests/modules/<id>.Verify.ps1`. It returns failure strings and handles `-ExpectAbsent`.
+6. Add `tests/fixtures/<scenario>.json` and list the scenario in `validate.yml`'s matrix.
+   `node tests/check-catalog.mjs` enforces steps 1–6.
+7. Push, and get the whole matrix green.
 
 ## Enabling Pages
 
@@ -93,11 +156,14 @@ One-time setup: **Settings → Pages → Source: GitHub Actions**. The `pages.ym
 ## Local testing
 
 ```
-node tools/render.mjs tests/fixtures/config.json out
+node tests/check-catalog.mjs                       # any OS
+node tools/render.mjs tests/fixtures/default.json out
+pwsh ./tests/Run-Scenario.ps1 -Fixture tests/fixtures/default.json   # Windows only; changes the machine
 ```
 
-Produces `out/Install-Example Site.cmd` and `out/Uninstall-Example Site.cmd` from the checked-in
-fixture. Requires an actual Windows machine (or the CI runner) to execute.
+`render.mjs` produces `out/Install-Example Site.cmd` and `out/Uninstall-Example Site.cmd` from
+the fixture. `Run-Scenario.ps1` is what CI runs: it actually installs, re-runs twice, uninstalls,
+and asserts state at each point, so only run it on a disposable machine.
 
 ## Verifying it worked (do this before handing the file off)
 
@@ -134,3 +200,5 @@ it in *and* that a normal click can't undo it:
   benign — it refers only to this one extension policy.
 - A domain-joined machine, or one with a pre-existing machine-wide Chrome policy, triggers the
   one-time elevated (`HKLM`) path described above, which does show a UAC prompt.
+- The Chrome module only ever installs Chrome for the user who runs the file. Run it as the
+  person who will use the computer, not from an admin account.
