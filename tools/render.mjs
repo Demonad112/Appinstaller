@@ -13,7 +13,8 @@
 //                             "iconPath": "path/to/icon.ico" },   // Node-only sugar: for an "icon"
 //                                                                 // option "fooB64", "fooPath" is read
 //                                                                 // into fooB64
-//       "ublock-lite":      { "pinToolbar": true, "autoRestartChrome": false }
+//       "ublock-lite":      { "pinToolbar": true, "autoRestartChrome": false },
+//       "app-7zip":         {}      // curated apps (docs/apps/<id>.json) are modules named app-<id>
 //     },
 //     "generateUninstall": true
 //   }
@@ -23,6 +24,8 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } fr
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
+  expandCatalog,
+  fragmentIds,
   renderInstall,
   renderUninstall,
   selectedModules,
@@ -36,13 +39,26 @@ const DOCS_DIR = path.join(__dirname, '..', 'docs');
 
 const read = (...p) => readFileSync(path.join(DOCS_DIR, ...p), 'utf8');
 
-export function loadCatalog() {
+// The raw docs/catalog.json (modules + the "apps" id list), without the generated app modules.
+export function loadRawCatalog() {
   return JSON.parse(read('catalog.json'));
 }
 
-function loadFragments(ids, kind) {
+export function loadAppDefs(raw = loadRawCatalog()) {
+  const defs = {};
+  for (const id of raw.apps || []) defs[id] = JSON.parse(read('apps', `${id}.json`));
+  return defs;
+}
+
+// The catalog every consumer works with: hand-written modules plus one `app-<id>` module per app.
+export function loadCatalog() {
+  const raw = loadRawCatalog();
+  return expandCatalog(raw, loadAppDefs(raw));
+}
+
+function loadFragments(catalog, ids, kind) {
   const out = {};
-  for (const id of ids) out[id] = read('modules', id, `${kind}.ps1`);
+  for (const f of fragmentIds(catalog, ids)) out[f] = read('modules', f, `${kind}.ps1`);
   return out;
 }
 
@@ -71,9 +87,9 @@ export function renderAll(rawConfig) {
   if (ids.length === 0) throw new Error('Config selects no modules');
   return {
     baseName: outputBaseName(catalog, config),
-    install: renderInstall({ core: read('core', 'installer-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(ids, 'install'), config }),
+    install: renderInstall({ core: read('core', 'installer-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(catalog, ids, 'install'), config }),
     uninstall: config.generateUninstall
-      ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(ids, 'uninstall'), config })
+      ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(catalog, ids, 'uninstall'), config })
       : null,
   };
 }

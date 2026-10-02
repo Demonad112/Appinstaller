@@ -55,6 +55,44 @@ export function iconKeys(catalog, id) {
   return ((m && m.options) || []).filter((o) => o.type === 'icon').map((o) => o.key);
 }
 
+// Curated apps are data: catalog.json lists app ids and docs/apps/<id>.json defines each one.
+// expandCatalog() turns them into ordinary catalog modules `app-<id>` that share ONE fragment
+// pair (docs/modules/app/{install,uninstall}.ps1); the app definition itself is embedded in the
+// runtime config (modules['app-<id>'].app) so the generic fragment stays data-driven.
+// appDefs: { [appId]: parsed docs/apps/<appId>.json }. Pure; browser and Node both call it.
+export function expandCatalog(catalog, appDefs) {
+  const modules = [...catalog.modules];
+  for (const id of catalog.apps || []) {
+    const a = appDefs && appDefs[id];
+    if (!a) throw new Error(`Missing app definition '${id}' (docs/apps/${id}.json)`);
+    modules.push({
+      id: `app-${id}`,
+      label: a.label,
+      description: a.description,
+      order: a.order,
+      scope: a.scope,
+      requires: a.requires || [],
+      default: false,
+      options: [],
+      fragment: 'app',
+      app: a,
+    });
+  }
+  return { ...catalog, modules };
+}
+
+// The fragment file ids (docs/modules/<fragmentId>/<kind>.ps1) needed to render these modules:
+// a module's own id, or the shared fragment it names (listed once).
+export function fragmentIds(catalog, ids) {
+  const out = [];
+  for (const id of ids) {
+    const m = catalog.modules.find((x) => x.id === id);
+    const f = (m && m.fragment) || id;
+    if (!out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
 // Selected module ids, in catalog order (which is also execution order on the target).
 export function selectedModules(catalog, config) {
   const chosen = config.modules || {};
@@ -73,12 +111,25 @@ export function buildPolyglot(psPayload) {
   return [header, MARKER, normalized].join('\r\n');
 }
 
-function assemble(coreText, commonText, ids, fragments, runtimeConfig) {
+// A module with a "fragment" shares that fragment's text with its siblings: the text is emitted
+// once (at first use) and each module is registered by `$Modules += New-<Fragment>Module -Id '<id>'`
+// (e.g. New-AppModule). Plain modules emit their own fragment unchanged.
+function assemble(coreText, commonText, catalog, ids, fragments, runtimeConfig) {
+  const shared = new Set();
   const body = ids
     .map((id) => {
-      const text = fragments[id];
+      const m = catalog.modules.find((x) => x.id === id);
+      const key = (m && m.fragment) || id;
+      const text = fragments[key];
       if (typeof text !== 'string') throw new Error(`Missing script fragment for module '${id}'`);
-      return `# ==== module: ${id} ====\n${text.replace(/\s+$/, '')}\n`;
+      if (!m.fragment) return `# ==== module: ${id} ====\n${text.replace(/\s+$/, '')}\n`;
+      let out = '';
+      if (!shared.has(key)) {
+        shared.add(key);
+        out += `# ==== shared: ${key} ====\n${text.replace(/\s+$/, '')}\n\n`;
+      }
+      const factory = `New-${key.charAt(0).toUpperCase()}${key.slice(1)}Module`;
+      return `${out}# ==== module: ${id} ====\n$Modules += ${factory} -Id '${id}'\n`;
     })
     .join('\n');
   const configB64 = utf8ToBase64(JSON.stringify(runtimeConfig));
@@ -97,13 +148,22 @@ function runtimeConfig(catalog, ids, modules) {
   return { modules, scopes };
 }
 
-// fragments: { [moduleId]: install.ps1 text } for (at least) every selected module.
+// Per-module runtime options; an app module also carries its definition (not user input).
+function moduleRuntime(catalog, id, opts) {
+  const m = catalog.modules.find((x) => x.id === id);
+  if (!m || !m.app) return opts;
+  const { id: appId, label, scope, source, detect, uninstall } = m.app;
+  return { ...opts, app: { id: appId, label, scope, source, detect, uninstall } };
+}
+
+// catalog: the EXPANDED catalog (see expandCatalog).
+// fragments: { [fragmentId]: install.ps1 text } per fragmentIds(catalog, selected ids).
 // common: docs/core/common.ps1 text.
 export function renderInstall({ core, common, catalog, fragments, config }) {
   const ids = selectedModules(catalog, config);
   const modules = {};
-  for (const id of ids) modules[id] = config.modules[id];
-  return buildPolyglot(assemble(core, common, ids, fragments, runtimeConfig(catalog, ids, modules)));
+  for (const id of ids) modules[id] = moduleRuntime(catalog, id, config.modules[id]);
+  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules)));
 }
 
 // Same as renderInstall, minus the icon payloads the uninstaller never needs.
@@ -113,7 +173,7 @@ export function renderUninstall({ core, common, catalog, fragments, config }) {
   for (const id of ids) {
     const rest = { ...(config.modules[id] || {}) };
     for (const k of iconKeys(catalog, id)) delete rest[k];
-    modules[id] = rest;
+    modules[id] = moduleRuntime(catalog, id, rest);
   }
-  return buildPolyglot(assemble(core, common, ids, fragments, runtimeConfig(catalog, ids, modules)));
+  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules)));
 }

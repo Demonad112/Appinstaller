@@ -1,0 +1,54 @@
+name: Probe winget candidates
+
+# Admission tool for new apps (see tools/Probe-Winget.ps1): records what winget and the vendor
+# really do on windows-latest. Run it from the Actions tab (workflow_dispatch) for any package ID,
+# or it runs on pull requests that touch the probe itself.
+
+on:
+  pull_request:
+    paths:
+      - 'tools/Probe-Winget.ps1'
+      - '.github/workflows/probe-winget.yml'
+  workflow_dispatch:
+    inputs:
+      id:
+        description: 'winget package ID (blank = the built-in candidate list)'
+        required: false
+        default: ''
+      arp_regex:
+        description: 'DisplayName regex to detect it in Add/Remove Programs'
+        required: false
+        default: ''
+      url:
+        description: 'Vendor download URL to hash / signature-check (optional)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: '7zip.7zip', arp: '^7-Zip', url: '' }
+          - { id: 'VideoLAN.VLC', arp: '^VLC media player', url: 'https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.exe' }
+          - { id: 'Adobe.Acrobat.Reader.64-bit', arp: '^Adobe (Acrobat|Reader)', url: '' }
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe (candidate list)
+        if: github.event.inputs.id == ''
+        shell: pwsh
+        env:
+          P_ID: ${{ matrix.id }}
+          P_ARP: ${{ matrix.arp }}
+          P_URL: ${{ matrix.url }}
+        run: ./tools/Probe-Winget.ps1 -Id $env:P_ID -ArpRegex $env:P_ARP -Url $env:P_URL -Install
+      - name: Probe (custom id)
+        if: github.event.inputs.id != '' && matrix.id == '7zip.7zip'
+        shell: pwsh
+        env:
+          P_ID: ${{ github.event.inputs.id }}
+          P_ARP: ${{ github.event.inputs.arp_regex }}
+          P_URL: ${{ github.event.inputs.url }}
+        run: ./tools/Probe-Winget.ps1 -Id $env:P_ID -ArpRegex $env:P_ARP -Url $env:P_URL -Install

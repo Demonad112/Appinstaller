@@ -10,11 +10,12 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderAll, loadCatalog } from '../tools/render.mjs';
+import { renderAll, loadCatalog, loadRawCatalog } from '../tools/render.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
-const catalog = loadCatalog();
+const rawCatalog = loadRawCatalog();
+const catalog = loadCatalog(); // expanded: hand-written modules + one app-<id> module per docs/apps/<id>.json
 
 const OPTION_TYPES = ['text', 'url', 'select', 'radio', 'checkbox', 'icon', 'secret', 'multiselect'];
 const NEEDS_VALUES = ['select', 'radio', 'multiselect'];
@@ -56,11 +57,102 @@ function checkSchema(m) {
   }
 }
 
+// ---- Curated apps (docs/apps/<id>.json) ------------------------------------------------------
+// Admission rules (CLAUDE.md): pinned winget ID (the engine always adds --source winget --exact)
+// or a signature/hash-checked URL, a detect step, an uninstall path. Unknown keys are errors so a
+// typo can't silently weaken a check.
+const APP_KEYS = ['id', 'label', 'description', 'order', 'scope', 'requires', 'source', 'detect', 'uninstall', 'notes'];
+const ENV_ROOTED = /^%(ProgramFiles|ProgramFiles\(x86\)|ProgramW6432|LOCALAPPDATA|APPDATA|ProgramData|SystemRoot|windir|USERPROFILE)%[\\/]/i;
+const WINGET_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)+$/;
+
+function unknownKeys(obj, allowed, at) {
+  for (const k of Object.keys(obj)) if (!allowed.includes(k)) errors.push(`${at}: unknown key '${k}'`);
+}
+function checkArgs(args, at) {
+  if (!Array.isArray(args) || args.some((a) => typeof a !== 'string' || a === '')) errors.push(`${at}: args must be an array of non-empty strings`);
+}
+function checkRegex(v, at) {
+  if (typeof v !== 'string' || !v) { errors.push(`${at}: must be a non-empty regex string`); return; }
+  try { new RegExp(v); } catch { errors.push(`${at}: not a valid regex`); }
+}
+
+function checkApp(id, a) {
+  const at = `app '${id}'`;
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) errors.push(`${at}: id must be lowercase letters, digits and dashes`);
+  if (a.id !== id) errors.push(`${at}: "id" in docs/apps/${id}.json is '${a.id}'`);
+  unknownKeys(a, APP_KEYS, at);
+  for (const k of ['label', 'description']) if (!a[k] || typeof a[k] !== 'string') errors.push(`${at}: missing ${k}`);
+  if (typeof a.order !== 'number' || a.order < 100) errors.push(`${at}: order must be a number >= 100 (hand-written modules use < 100)`);
+  if (!['user', 'machine'].includes(a.scope)) errors.push(`${at}: scope must be "user" or "machine"`);
+  if (a.requires !== undefined && (!Array.isArray(a.requires) || a.requires.some((r) => typeof r !== 'string'))) errors.push(`${at}: requires must be an array of module ids`);
+
+  const s = a.source || {};
+  if (s.type === 'winget') {
+    unknownKeys(s, ['type', 'id'], `${at} source`);
+    if (!WINGET_ID.test(s.id || '')) errors.push(`${at}: source.id '${s.id}' is not a winget package ID (Publisher.Package)`);
+  } else if (s.type === 'url') {
+    unknownKeys(s, ['type', 'url', 'sha256', 'signer', 'args', 'timeoutSec'], `${at} source`);
+    if (!/^https:\/\/[^\s/]+\/\S+$/.test(s.url || '')) errors.push(`${at}: source.url must be an https:// URL`);
+    if (s.sha256 === undefined && s.signer === undefined) errors.push(`${at}: a url source needs sha256 and/or signer (never run an unverified download)`);
+    if (s.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(s.sha256)) errors.push(`${at}: sha256 must be 64 lowercase hex characters`);
+    if (s.signer !== undefined) checkRegex(s.signer, `${at} source.signer`);
+    checkArgs(s.args, `${at} source.args (silent switches)`);
+    if (s.timeoutSec !== undefined && !(Number.isInteger(s.timeoutSec) && s.timeoutSec > 0 && s.timeoutSec <= 3600)) errors.push(`${at}: timeoutSec must be 1-3600`);
+  } else errors.push(`${at}: source.type must be "winget" or "url"`);
+
+  if (!Array.isArray(a.detect) || a.detect.length === 0) errors.push(`${at}: detect must be a non-empty array`);
+  else {
+    a.detect.forEach((d, i) => {
+      const dat = `${at} detect[${i}]`;
+      if (d.type === 'file') {
+        unknownKeys(d, ['type', 'path'], dat);
+        if (!ENV_ROOTED.test(d.path || '')) errors.push(`${dat}: path must start with a known %ENV% root (e.g. %ProgramFiles%\\...)`);
+        if (/\.\./.test(d.path || '')) errors.push(`${dat}: path must not contain ..`);
+      } else if (d.type === 'arp') {
+        unknownKeys(d, ['type', 'displayName', 'publisher'], dat);
+        checkRegex(d.displayName, `${dat}.displayName`);
+        if (d.publisher !== undefined) checkRegex(d.publisher, `${dat}.publisher`);
+      } else errors.push(`${dat}: type must be "file" or "arp"`);
+    });
+  }
+
+  const u = a.uninstall || {};
+  if (u.type === 'winget') {
+    unknownKeys(u, ['type'], `${at} uninstall`);
+    if (s.type !== 'winget') errors.push(`${at}: uninstall type "winget" needs a winget source`);
+  } else if (u.type === 'exe') {
+    unknownKeys(u, ['type', 'path', 'args', 'timeoutSec'], `${at} uninstall`);
+    if (!ENV_ROOTED.test(u.path || '')) errors.push(`${at}: uninstall.path must start with a known %ENV% root`);
+    checkArgs(u.args, `${at} uninstall.args`);
+  } else errors.push(`${at}: uninstall.type must be "winget" or "exe"`);
+}
+
+const appIds = rawCatalog.apps || [];
+if (new Set(appIds).size !== appIds.length) errors.push('catalog.json "apps" has duplicate ids');
+for (const id of appIds) {
+  const f = path.join(root, 'docs/apps', `${id}.json`);
+  if (!existsSync(f)) { errors.push(`catalog app '${id}': missing docs/apps/${id}.json`); continue; }
+  checkApp(id, JSON.parse(readFileSync(f, 'utf8')));
+  if (rawCatalog.modules.some((m) => m.id === `app-${id}`)) errors.push(`app '${id}': module id 'app-${id}' is already used in catalog.json`);
+}
+const appDir = path.join(root, 'docs/apps');
+if (existsSync(appDir)) {
+  for (const f of readdirSync(appDir).filter((x) => x.endsWith('.json'))) {
+    if (!appIds.includes(f.replace(/\.json$/, ''))) errors.push(`docs/apps/${f} is not listed in catalog.json "apps"`);
+  }
+}
+
+
 const ids = new Set();
 for (const m of catalog.modules) {
   if (ids.has(m.id)) errors.push(`duplicate module id '${m.id}'`);
   ids.add(m.id);
-  for (const f of [`docs/modules/${m.id}/install.ps1`, `docs/modules/${m.id}/uninstall.ps1`, `tests/modules/${m.id}.Verify.ps1`]) {
+  // App modules (generated from docs/apps/<id>.json) share the fragment pair and Verify script of
+  // the 'app' fragment; each app needs its own fixture.
+  const frag = m.fragment || m.id;
+  const wanted = [`docs/modules/${frag}/install.ps1`, `docs/modules/${frag}/uninstall.ps1`, `tests/modules/${frag}.Verify.ps1`];
+  if (m.fragment) wanted.push(`tests/fixtures/${m.id}.json`);
+  for (const f of wanted) {
     if (!existsSync(path.join(root, f))) errors.push(`module '${m.id}': missing ${f}`);
   }
   for (const r of m.requires || []) if (!catalog.modules.some((x) => x.id === r)) errors.push(`module '${m.id}' requires unknown '${r}'`);

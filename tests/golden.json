@@ -1,4 +1,28 @@
 {
+  "app-7zip-present": {
+    "install": "1a73b8f175a753f59226d1f449f2f458c86c3f9901d92357498925d6049cfa9d",
+    "uninstall": "1191a7b1680978dced6dae6f7199f424393eb1dc11386a5bfd05619d90200b1f"
+  },
+  "app-7zip": {
+    "install": "1a73b8f175a753f59226d1f449f2f458c86c3f9901d92357498925d6049cfa9d",
+    "uninstall": "1191a7b1680978dced6dae6f7199f424393eb1dc11386a5bfd05619d90200b1f"
+  },
+  "app-adobe-reader": {
+    "install": "49a6d63f1b3132bb282680c9ffc634d5953d4de057dbcd960efc669e485c1a8b",
+    "uninstall": "238570bf84e60a7ae1da10912a79ad9083d8c4ba500b0d05f7fed8a9b19107a7"
+  },
+  "app-blocked": {
+    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
+    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+  },
+  "app-tampered": {
+    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
+    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+  },
+  "app-vlc": {
+    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
+    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+  },
   "chrome-blocked": {
     "install": "e3563f7144a90abffca71a523dc18ed3dd4d3a8514015c5cc91c229655e0c03c",
     "uninstall": "55eaafacb9b2000d870071e07e2de69058fe5f922212c069d4f830fae816cd00"

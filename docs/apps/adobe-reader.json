@@ -1,0 +1,16 @@
+{
+  "id": "adobe-reader",
+  "label": "Adobe Acrobat Reader",
+  "description": "Opens and fills in PDF files. Installed for every user on this computer; may ask for administrator permission once. Does nothing if Adobe Reader or Acrobat is already installed, and uninstall only removes it if this setup installed it.",
+  "order": 130,
+  "scope": "machine",
+  "requires": [],
+  "source": { "type": "winget", "id": "Adobe.Acrobat.Reader.64-bit" },
+  "detect": [
+    { "type": "file", "path": "%ProgramFiles%\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe" },
+    { "type": "file", "path": "%ProgramFiles(x86)%\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe" },
+    { "type": "arp", "displayName": "^Adobe (Acrobat|Reader)", "publisher": "^Adobe" }
+  ],
+  "uninstall": { "type": "winget" },
+  "notes": "Probed on windows-latest (winget 1.11): winget install/uninstall both exit 0, uninstall ~38 s, no ARP entry left afterwards. Not on the runner image."
+}

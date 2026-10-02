@@ -1,0 +1,5 @@
+{
+  "modules": { "app-7zip": {} },
+  "generateUninstall": true,
+  "_ci": { "preinstallApps": ["7zip"], "expectApp": "existing" }
+}
