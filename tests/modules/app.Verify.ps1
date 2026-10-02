@@ -2,7 +2,7 @@
 # _ci.expectApp = "fresh" (default: this setup installed it) or "existing" (it was already on the
 # computer, so it must never be recorded or removed by this setup).
 #   after install   : detected; state record present iff fresh; "<label> installed." logged exactly
-#                     once iff fresh (idempotency: the 2nd and 3rd runs only log "already installed")
+#                     once iff fresh (the engine's own "Installed <label> (<source>)." line) (idempotency: the 2nd and 3rd runs only log "already installed")
 #   after uninstall : fresh -> gone and no record; existing -> still detected, no record
 param(
     [Parameter(Mandatory = $true)][string]$AppId,
@@ -48,9 +48,9 @@ if ($ExpectAbsent) {
     if ($expect -eq 'existing' -and $hasRecord) { $failures += "'$AppId' was pre-installed but apps-state.json claims this setup installed it" }
     $log = Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log'
     if (Test-Path -LiteralPath $log) {
-        $n = @(Get-Content -LiteralPath $log | Where-Object { $_ -match ('\] ' + [regex]::Escape($app.label) + ' installed\.$') }).Count
+        $n = @(Get-Content -LiteralPath $log | Where-Object { $_ -match ('\] Installed ' + [regex]::Escape($app.label) + ' \(') }).Count
         $want = if ($expect -eq 'fresh') { 1 } else { 0 }
-        if ($n -ne $want) { $failures += "Expected '$($app.label) installed.' logged $want time(s), found $n (idempotency)" }
+        if ($n -ne $want) { $failures += "Expected 'Installed $($app.label)' logged $want time(s), found $n (idempotency)" }
     }
 }
 return $failures

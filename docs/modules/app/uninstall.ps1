@@ -72,6 +72,7 @@ function Invoke-AppNative {
         $sp = @{ FilePath = $File; PassThru = $true; WindowStyle = 'Hidden'; RedirectStandardOutput = $out; RedirectStandardError = $err }
         if ($Arguments -and $Arguments.Count -gt 0) { $sp.ArgumentList = $Arguments }
         $p = Start-Process @sp
+        $null = $p.Handle   # caches the handle so ExitCode is readable in Windows PowerShell 5.1
         if (-not $p.WaitForExit($TimeoutSec * 1000)) {
             try { $p.Kill() } catch {}
             throw "$([IO.Path]::GetFileName($File)) did not finish within $TimeoutSec seconds"
@@ -82,6 +83,7 @@ function Invoke-AppNative {
                 Get-Content -LiteralPath $f -ErrorAction SilentlyContinue | Where-Object { $_ -match '[A-Za-z0-9]' -and $_ -notmatch '^\s*[-\\|/]\s*$' -and $_ -notmatch '[█▒]' } | ForEach-Object { Write-Log "  | $_" }
             }
         }
+        if ($null -eq $p.ExitCode) { throw "Could not read the exit code of $([IO.Path]::GetFileName($File)); treating it as failed." }
         Write-Log ("{0} exit code {1}" -f [IO.Path]::GetFileName($File), $p.ExitCode)
         return [int]$p.ExitCode
     } finally {
