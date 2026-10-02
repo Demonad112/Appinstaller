@@ -1,27 +1,27 @@
 {
   "app-7zip-present": {
-    "install": "7d5358453cb877cc47e4aff6a02ff5849228f8bc7a5702fc7af548cb1f8d8520",
-    "uninstall": "a808f93e6d39a3fb10346f9ef4d3bedd2fd61561d1dfa4158a72bded895232ba"
+    "install": "5f398ad97f2a598f451d826d313e71c52e2eaafb57e4d7059ece25548c9f51e6",
+    "uninstall": "6723b4b63e8246637cd491f2daf230ff1906ef99b6f889c321206bef90c1ab5c"
   },
   "app-7zip": {
-    "install": "7d5358453cb877cc47e4aff6a02ff5849228f8bc7a5702fc7af548cb1f8d8520",
-    "uninstall": "a808f93e6d39a3fb10346f9ef4d3bedd2fd61561d1dfa4158a72bded895232ba"
+    "install": "5f398ad97f2a598f451d826d313e71c52e2eaafb57e4d7059ece25548c9f51e6",
+    "uninstall": "6723b4b63e8246637cd491f2daf230ff1906ef99b6f889c321206bef90c1ab5c"
   },
   "app-adobe-reader": {
-    "install": "49b63e0747c2d3b179e802da374ba01a417fb660a43ae2c4d293f5f513d95e02",
-    "uninstall": "cbc8704815cb1e5c71c9dbfc34dd03251b421ffd9c14898871fd6312764a86a1"
+    "install": "e50dbc3e4a80444dccf02cf3e49e4b63a6b780855d72079f530724e820e2a0e4",
+    "uninstall": "a4df1f3313617fb1ff06c1ea19c95e29437c2437c5c6e97b648bfe1ed3f0765b"
   },
   "app-blocked": {
-    "install": "bb5830a8e3ef845200084b51a089bf3c1b7c0097999ad57fd9d15884480a3966",
-    "uninstall": "cdfa41220d93226109838a0f9302df5d5df3eda5fe8cbbef9e53d21bfd2d0066"
+    "install": "eb1e0d84e620c326c426ac9c440dab0a6424c647834c94066b96793224f0e3da",
+    "uninstall": "ee26b5bee319c4b1b69f4fba4197889df7e801ee8211180d052f41ea8de88be9"
   },
   "app-tampered": {
-    "install": "bb5830a8e3ef845200084b51a089bf3c1b7c0097999ad57fd9d15884480a3966",
-    "uninstall": "cdfa41220d93226109838a0f9302df5d5df3eda5fe8cbbef9e53d21bfd2d0066"
+    "install": "eb1e0d84e620c326c426ac9c440dab0a6424c647834c94066b96793224f0e3da",
+    "uninstall": "ee26b5bee319c4b1b69f4fba4197889df7e801ee8211180d052f41ea8de88be9"
   },
   "app-vlc": {
-    "install": "bb5830a8e3ef845200084b51a089bf3c1b7c0097999ad57fd9d15884480a3966",
-    "uninstall": "cdfa41220d93226109838a0f9302df5d5df3eda5fe8cbbef9e53d21bfd2d0066"
+    "install": "eb1e0d84e620c326c426ac9c440dab0a6424c647834c94066b96793224f0e3da",
+    "uninstall": "ee26b5bee319c4b1b69f4fba4197889df7e801ee8211180d052f41ea8de88be9"
   },
   "chrome-blocked": {
     "install": "e3563f7144a90abffca71a523dc18ed3dd4d3a8514015c5cc91c229655e0c03c",

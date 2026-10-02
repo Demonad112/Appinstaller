@@ -135,7 +135,7 @@ function Get-InstallLogLines {
 function Assert-Phase([string[]]$NewLog, $ExpectElevatedSetting) {
     # true -> the default (ublock-lite); a list -> those module ids must finish in the child
     $ExpectElevated = [bool]$ExpectElevatedSetting
-    $elevatedMods = if ($ExpectElevatedSetting -is [array]) { @($ExpectElevatedSetting) } else { @('ublock-lite') }
+    $elevatedMods = if ($ExpectElevatedSetting -is [bool] -or $null -eq $ExpectElevatedSetting) { @('ublock-lite') } else { @($ExpectElevatedSetting) }
     $start = ($NewLog | Select-String -SimpleMatch 'phase=machine start' | Select-Object -First 1)
     $elevated = [bool]$start
     if ($elevated -ne $ExpectElevated) { Show-Logs; throw "Expected elevated machine phase = $ExpectElevated, got $elevated" }

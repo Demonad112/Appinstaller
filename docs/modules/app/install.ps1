@@ -87,6 +87,7 @@ function Invoke-AppNative {
             try { $p.Kill() } catch {}
             throw "$([IO.Path]::GetFileName($File)) did not finish within $TimeoutSec seconds"
         }
+        $p.WaitForExit()   # flushes redirected output and makes ExitCode reliable after the timed wait
         foreach ($f in @($out, $err)) {
             if (Test-Path -LiteralPath $f) {
                 Get-Content -LiteralPath $f -ErrorAction SilentlyContinue | Where-Object { $_ -match '[A-Za-z0-9]' -and $_ -notmatch '^\s*[-\\|/]\s*$' -and $_ -notmatch '[█▒]' } | ForEach-Object { Write-Log "  | $_" }
