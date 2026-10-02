@@ -17,7 +17,7 @@ function New-DesktopShortcut {
 
     $iconPath = $null
     if ($IconBytes -and $IconBytes.Length -gt 0) {
-        $iconDir = Join-Path $env:LOCALAPPDATA 'MomSetup\Icons'
+        $iconDir = Join-Path $env:LOCALAPPDATA 'Appinstaller\Icons'
         New-Item -ItemType Directory -Path $iconDir -Force -ErrorAction SilentlyContinue | Out-Null
         $iconPath = Join-Path $iconDir "$safeName.ico"
         [IO.File]::WriteAllBytes($iconPath, $IconBytes)

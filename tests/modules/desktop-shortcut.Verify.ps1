@@ -23,6 +23,9 @@ if ($ExpectAbsent) {
     if ($sc.Arguments -notlike "*$($Cfg.destUrl)*") {
         $failures += "Shortcut .lnk arguments do not contain the expected URL. Got: '$($sc.Arguments)'"
     }
+    if ($Cfg.iconPath -and $sc.IconLocation -notlike '*Appinstaller\Icons\*.ico*') {
+        $failures += "Shortcut icon should come from Appinstaller\Icons, got '$($sc.IconLocation)'"
+    }
     if ($sc.TargetPath -notlike '*\chrome.exe') {
         $failures += "Shortcut .lnk target is not chrome.exe. Got: '$($sc.TargetPath)'"
     }

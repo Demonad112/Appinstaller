@@ -17,7 +17,7 @@ $exe = @(
 if (-not $exe) { $failures += "chrome.exe not found in any standard location" }
 
 $expect = if ($Ci -and $Ci.expectChrome) { $Ci.expectChrome } else { 'existing' }
-$statePath = Join-Path $env:LOCALAPPDATA 'MomSetup\chrome-state.json'
+$statePath = Join-Path $env:LOCALAPPDATA 'Appinstaller\chrome-state.json'
 if ($expect -eq 'existing') {
     if (Test-Path $statePath) { $failures += "Chrome was pre-installed but chrome-state.json claims this setup installed it" }
 } else {
