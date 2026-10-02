@@ -16,6 +16,46 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
 const catalog = loadCatalog();
 
+const OPTION_TYPES = ['text', 'url', 'select', 'radio', 'checkbox', 'icon', 'secret', 'multiselect'];
+const NEEDS_VALUES = ['select', 'radio', 'multiselect'];
+
+function checkSchema(m) {
+  const at = `module '${m.id}'`;
+  if ('needsAdmin' in m) errors.push(`${at}: needsAdmin was replaced by scope: "user"|"machine"`);
+  if (!['user', 'machine'].includes(m.scope)) errors.push(`${at}: scope must be "user" or "machine"`);
+  if (!Array.isArray(m.options)) { errors.push(`${at}: options must be an array`); return; }
+  const keys = new Set();
+  for (const o of m.options) {
+    const oat = `${at} option '${o.key}'`;
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(o.key || '')) errors.push(`${at}: option key '${o.key}' must be alphanumeric`);
+    if (keys.has(o.key)) errors.push(`${oat}: duplicate key`);
+    keys.add(o.key);
+    if (!OPTION_TYPES.includes(o.type)) { errors.push(`${oat}: unknown type '${o.type}'`); continue; }
+    if (o.type === 'secret') errors.push(`${oat}: secret options are not allowed until the secrets batch (they would be embedded in the .cmd)`);
+    if (!o.label) errors.push(`${oat}: missing label`);
+    if (NEEDS_VALUES.includes(o.type)) {
+      if (!Array.isArray(o.values) || o.values.length === 0 || o.values.some((v) => !v || typeof v.value !== 'string' || !v.label)) {
+        errors.push(`${oat}: ${o.type} needs a non-empty values list of {value,label}`);
+      } else {
+        const vals = o.values.map((v) => v.value);
+        const defs = o.type === 'multiselect' ? o.default || [] : o.default === undefined ? [] : [o.default];
+        for (const d of defs) if (!vals.includes(d)) errors.push(`${oat}: default '${d}' is not in values`);
+        if (o.type === 'multiselect' && o.default !== undefined && !Array.isArray(o.default)) errors.push(`${oat}: multiselect default must be an array`);
+      }
+    } else if (o.values !== undefined) errors.push(`${oat}: values only apply to select/radio/multiselect`);
+    if (o.type === 'checkbox' && o.default !== undefined && typeof o.default !== 'boolean') errors.push(`${oat}: checkbox default must be boolean`);
+    if (['text', 'url', 'secret'].includes(o.type) && o.default !== undefined && typeof o.default !== 'string') errors.push(`${oat}: default must be a string`);
+    if (o.type === 'icon' && !/B64$/.test(o.key)) errors.push(`${oat}: icon option keys must end in B64 (fixtures use the matching ...Path)`);
+    if (o.pattern !== undefined) {
+      try { new RegExp(o.pattern); } catch { errors.push(`${oat}: pattern is not a valid regex`); }
+    }
+    if (o.sanitize !== undefined && o.sanitize !== 'filename') errors.push(`${oat}: sanitize must be "filename"`);
+  }
+  if (m.fileNameFrom !== undefined && !m.options.some((o) => o.key === m.fileNameFrom && ['text', 'url'].includes(o.type))) {
+    errors.push(`${at}: fileNameFrom '${m.fileNameFrom}' is not a text option of this module`);
+  }
+}
+
 const ids = new Set();
 for (const m of catalog.modules) {
   if (ids.has(m.id)) errors.push(`duplicate module id '${m.id}'`);
@@ -26,6 +66,17 @@ for (const m of catalog.modules) {
   for (const r of m.requires || []) if (!catalog.modules.some((x) => x.id === r)) errors.push(`module '${m.id}' requires unknown '${r}'`);
   for (const k of ['label', 'description']) if (!m[k]) errors.push(`module '${m.id}': missing ${k}`);
   if (typeof m.order !== 'number') errors.push(`module '${m.id}': order must be a number`);
+  checkSchema(m);
+}
+for (const m of catalog.modules) {
+  // Ordering rule of the two-phase core: user-scope modules run first, so they cannot depend on a
+  // machine-scope module.
+  if (m.scope === 'user') {
+    for (const r of m.requires || []) {
+      const dep = catalog.modules.find((x) => x.id === r);
+      if (dep && dep.scope === 'machine') errors.push(`module '${m.id}' (user scope) requires machine-scope '${r}'`);
+    }
+  }
 }
 
 for (const core of ['installer-core.ps1', 'uninstall-core.ps1']) {

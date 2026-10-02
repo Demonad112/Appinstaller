@@ -29,6 +29,22 @@ jobs:
           node-version: '22'
       - run: node tests/check-catalog.mjs
 
+  # Drives the real configurator page in headless Chromium for every fixture and asserts the
+  # downloaded .cmd == the Node render == tests/golden.json.
+  browser:
+    needs: catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/browser.mjs
+
   scenario:
     needs: catalog
     runs-on: windows-latest

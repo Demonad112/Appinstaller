@@ -36,10 +36,23 @@ export function sanitizeFilename(name) {
   return String(name || '').replace(/[\\/:*?"<>|]/g, '_').trim();
 }
 
-// Download/file base name: the shortcut name when that module is selected, else a generic one.
-export function outputBaseName(config) {
-  const sc = config.modules && config.modules['desktop-shortcut'];
-  return (sc && sanitizeFilename(sc.name)) || 'Setup';
+// Download/file base name: the first selected module (catalog order) that declares
+// "fileNameFrom": "<optionKey>" supplies it; otherwise a generic one.
+export function outputBaseName(catalog, config) {
+  for (const id of selectedModules(catalog, config)) {
+    const m = catalog.modules.find((x) => x.id === id);
+    const v = m.fileNameFrom && config.modules[id] && config.modules[id][m.fileNameFrom];
+    const name = v && sanitizeFilename(v);
+    if (name) return name;
+  }
+  return 'Setup';
+}
+
+// Option keys of type "icon" for a module (their payload is install-only and is stripped from
+// the uninstaller's config).
+export function iconKeys(catalog, id) {
+  const m = catalog.modules.find((x) => x.id === id);
+  return ((m && m.options) || []).filter((o) => o.type === 'icon').map((o) => o.key);
 }
 
 // Selected module ids, in catalog order (which is also execution order on the target).
@@ -81,12 +94,13 @@ export function renderInstall({ core, catalog, fragments, config }) {
   return buildPolyglot(assemble(core, ids, fragments, { modules }));
 }
 
-// Same as renderInstall, minus the icon payload the uninstaller never needs.
+// Same as renderInstall, minus the icon payloads the uninstaller never needs.
 export function renderUninstall({ core, catalog, fragments, config }) {
   const ids = selectedModules(catalog, config);
   const modules = {};
   for (const id of ids) {
-    const { iconB64, ...rest } = config.modules[id] || {};
+    const rest = { ...(config.modules[id] || {}) };
+    for (const k of iconKeys(catalog, id)) delete rest[k];
     modules[id] = rest;
   }
   return buildPolyglot(assemble(core, ids, fragments, { modules }));

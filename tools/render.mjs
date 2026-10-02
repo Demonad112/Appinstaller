@@ -10,7 +10,9 @@
 //   {
 //     "modules": {
 //       "desktop-shortcut": { "destUrl": "...", "name": "...", "style": "App" | "Url",
-//                             "iconPath": "path/to/icon.ico" },   // iconPath optional, Node-only
+//                             "iconPath": "path/to/icon.ico" },   // Node-only sugar: for an "icon"
+//                                                                 // option "fooB64", "fooPath" is read
+//                                                                 // into fooB64
 //       "ublock-lite":      { "pinToolbar": true, "autoRestartChrome": false }
 //     },
 //     "generateUninstall": true
@@ -25,6 +27,7 @@ import {
   renderUninstall,
   selectedModules,
   outputBaseName,
+  iconKeys,
   bytesToBase64,
 } from '../docs/render-core.js';
 
@@ -43,14 +46,20 @@ function loadFragments(ids, kind) {
   return out;
 }
 
-// Resolves Node-only conveniences (iconPath -> iconB64) and validates module ids.
+// Resolves Node-only conveniences (<icon option key minus B64>Path -> <key> as base64) and
+// validates module ids.
 export function normalizeConfig(raw, catalog) {
   const known = new Set(catalog.modules.map((m) => m.id));
   const modules = {};
   for (const [id, opts] of Object.entries(raw.modules || {})) {
     if (!known.has(id)) throw new Error(`Unknown module '${id}' (not in docs/catalog.json)`);
-    const { iconPath, ...rest } = opts || {};
-    modules[id] = iconPath ? { ...rest, iconB64: bytesToBase64(readFileSync(iconPath)) } : rest;
+    const rest = { ...(opts || {}) };
+    for (const key of iconKeys(catalog, id)) {
+      const pathKey = key.replace(/B64$/, '') + 'Path';
+      if (rest[pathKey]) rest[key] = bytesToBase64(readFileSync(rest[pathKey]));
+      delete rest[pathKey];
+    }
+    modules[id] = rest;
   }
   return { modules, generateUninstall: raw.generateUninstall !== false };
 }
@@ -61,7 +70,7 @@ export function renderAll(rawConfig) {
   const ids = selectedModules(catalog, config);
   if (ids.length === 0) throw new Error('Config selects no modules');
   return {
-    baseName: outputBaseName(config),
+    baseName: outputBaseName(catalog, config),
     install: renderInstall({ core: read('core', 'installer-core.ps1'), catalog, fragments: loadFragments(ids, 'install'), config }),
     uninstall: config.generateUninstall
       ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), catalog, fragments: loadFragments(ids, 'uninstall'), config })
