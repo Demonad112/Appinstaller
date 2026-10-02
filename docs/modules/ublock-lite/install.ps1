@@ -1,6 +1,7 @@
 # uBlock Origin Lite (MV3), force-installed via Chrome's ExtensionInstallForcelist policy.
-# HKCU needs no admin. A pre-existing machine-wide (HKLM) forcelist wins over HKCU entirely
-# (policy sources don't merge), so that case -- and only that case -- requests elevation.
+# Machine scope with a dynamic NeedsAdmin: HKCU needs no admin, but a pre-existing machine-wide
+# (HKLM) forcelist wins over HKCU entirely (policy sources don't merge), so that case -- and only
+# that case -- runs in the elevated child; otherwise it runs in-process as the user.
 # Options: pinToolbar (bool), autoRestartChrome (bool)
 
 $UBlockExtId = 'ddkjiahejlhfcafbddmgiahcphecmpfh'   # uBlock Origin Lite, Chrome Web Store

@@ -1,5 +1,6 @@
-# Removes the uBlock Origin Lite forcelist entry and its toolbar-pin policy, from HKCU and (when
-# elevated, or by relaunching elevated if a machine-wide entry exists) HKLM.
+# Removes the uBlock Origin Lite forcelist entry and its toolbar-pin policy from HKCU and, when
+# running elevated, HKLM. Machine scope with a dynamic NeedsAdmin: only a machine-wide entry of
+# ours makes the core run this in the elevated child.
 
 $UBlockExtId = 'ddkjiahejlhfcafbddmgiahcphecmpfh'
 
@@ -22,20 +23,27 @@ function Remove-ForceInstallEntry {
     }
 }
 
+function Test-HklmEntryPresent {
+    $hklmForcelist = 'HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist'
+    try {
+        if (Test-Path $hklmForcelist) {
+            foreach ($p in (Get-Item $hklmForcelist).Property) {
+                $val = (Get-ItemProperty -Path $hklmForcelist -Name $p -ErrorAction SilentlyContinue).$p
+                if ($val -like "$UBlockExtId;*") { return $true }
+            }
+        }
+    } catch {}
+    return $false
+}
+
 $Modules += [pscustomobject]@{
-    Id        = 'ublock-lite'
-    Uninstall = {
+    Id         = 'ublock-lite'
+    NeedsAdmin = { param($Cfg) Test-HklmEntryPresent }
+    Uninstall  = {
         param($Cfg)
         Remove-ForceInstallEntry -PolicyRoot 'HKCU:\Software\Policies\Google\Chrome'
         if (Test-IsAdmin) {
             Remove-ForceInstallEntry -PolicyRoot 'HKLM:\SOFTWARE\Policies\Google\Chrome'
-        } else {
-            $hklmForcelist = 'HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist'
-            $hasHklm = (Test-Path $hklmForcelist) -and (@((Get-Item $hklmForcelist).Property).Count -gt 0)
-            if ($hasHklm) {
-                Write-Log "Machine-wide entry detected; relaunching elevated to remove it."
-                Start-Process -FilePath $env:SELF -Verb RunAs -Wait
-            }
         }
         return "Removed the ad-blocker policy."
     }

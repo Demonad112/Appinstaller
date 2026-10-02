@@ -24,10 +24,14 @@ upload is sent to a server.
 The assembly itself lives in exactly one place, `docs/render-core.js`, which both the browser
 and `tools/render.mjs` (CI) import, so CI tests the exact bytes the website produces.
 
-On the target machine the core decodes the options, asks each selected module whether it needs
-admin (and if any does, relaunches elevated **once**), then runs each module's `Install` step in
-order. A failing module is reported in the final message and log without silently skipping the
-others, and the run exits non-zero.
+On the target machine the core decodes the options and runs in two phases. The real, un-elevated
+user takes a run lock (a second run exits with "already running"), shows a small non-modal
+"please wait" window, and runs every **user-scope** module in-process, so per-user changes land
+on the right profile. If any **machine-scope** module needs admin on this computer, the script
+then launches itself once more elevated (one UAC prompt) for just those modules; the child reports
+back through `%ProgramData%\Appinstaller\run-<guid>\result.json`. The parent shows one combined
+result popup and exits non-zero if any module failed, or if UAC was declined (those modules are
+reported as skipped). Both phases and the shared helpers are in `docs/core/common.ps1`.
 
 ### The polyglot file
 
@@ -74,8 +78,9 @@ no temp file, and the machine's script execution policy is never touched.
   user-scope platform policy).
 - If a machine-wide (`HKLM`) forcelist policy already exists, Chrome would ignore the `HKCU`
   value entirely (policy sources don't merge; the higher-priority source wins). The script
-  detects this and relaunches itself elevated via `Start-Process -Verb RunAs` to write `HKLM`
-  instead — this is the **only** case that produces a UAC prompt.
+  detects this, and the module (machine scope with a dynamic `NeedsAdmin`) then runs in the
+  core's elevated child to write `HKLM` instead — this is the **only** case that produces a UAC
+  prompt.
 - Idempotent: re-running updates the existing forcelist entry in place rather than adding
   duplicates, and never touches other extensions' entries.
 - **Known limitation:** uBOL installs in **Basic** filtering mode (network/DNR rules only, no
@@ -100,9 +105,10 @@ no temp file, and the machine's script execution policy is never touched.
 ```
 docs/                       GitHub Pages root
   index.html, app.js, ico.js, style.css   the configurator (checklist UI)
-  catalog.json              module registry: id, label, description, order, needsAdmin, requires
+  catalog.json              module registry: id, label, description, order, scope, requires, options
   render-core.js            THE renderer, shared by app.js and tools/render.mjs
-  core/installer-core.ps1   helpers + config decode + elevation + module runner
+  core/common.ps1           shared helpers + two-phase (user / elevated machine) driver
+  core/installer-core.ps1   config decode + install entry point (splices common.ps1)
   core/uninstall-core.ps1   same, for rollback
   modules/<id>/install.ps1, uninstall.ps1   one folder per module
 tools/render.mjs            Node CLI around render-core.js (CI + local testing)
@@ -110,7 +116,9 @@ tests/
   fixtures/<scenario>.json  one CI scenario each (which modules + options)
   modules/<id>.Verify.ps1   per-module assertions (installed / idempotent / removed)
   Run-Scenario.ps1          render -> lint -> install x3 -> verify -> uninstall -> verify
-  check-catalog.mjs         fast cross-platform consistency checks
+  check-catalog.mjs         fast cross-platform consistency + schema checks + golden hashes
+  golden.json               sha256 of each fixture's rendered .cmd (regenerate on purpose)
+  browser.mjs               Playwright: browser download == Node render == golden
 .github/workflows/
   pages.yml                 deploys docs/ to GitHub Pages
   validate.yml              catalog check, then a windows-latest job per scenario
@@ -129,20 +137,24 @@ shows up on the page.
   Interactive-only installers are rejected.
 - It has a defined uninstall behavior, even if that behavior is to deliberately leave the app
   in place.
-- Modules that write per-user state (HKCU, Desktop, `%LOCALAPPDATA%`) never request admin. An
-  over-the-shoulder UAC elevation (a standard user typing an admin's password) runs as the
-  *admin's* profile, so per-user changes would land on the wrong account.
+- Modules that write per-user state (HKCU, Desktop, `%LOCALAPPDATA%`) are `scope: "user"` and
+  run as the real user, never elevated. An over-the-shoulder UAC elevation (a standard user
+  typing an admin's password) runs as the *admin's* profile, so per-user changes would land on
+  the wrong account. Only `scope: "machine"` modules can run in the elevated child.
 
 **Checklist.**
 1. Add an entry to `docs/catalog.json` with `id`, `label`, `description`, `order`
-   (execution order), `needsAdmin` (UI badge) and `requires`.
+   (execution order), `scope` (`user` | `machine`), `requires` and `options`. A user-scope module
+   may not require a machine-scope one (user modules run first).
 2. Write `docs/modules/<id>/install.ps1`. It appends `{ Id; NeedsAdmin; Install }` to
-   `$Modules`; `Install` returns the result lines shown to the user. See
-   `docs/core/installer-core.ps1` for the contract and shared helpers.
-3. Write `docs/modules/<id>/uninstall.ps1`, which appends `{ Id; Uninstall }`.
-4. If the module has options:
-   - add a `<div class="module-body" data-module="<id>">` to `docs/index.html`;
-   - add a collector to `collectors` in `docs/app.js`.
+   `$Modules` (`NeedsAdmin` only matters for machine scope: absent means "always elevate");
+   `Install` returns the result lines shown to the user. See `docs/core/installer-core.ps1` for
+   the contract and `docs/core/common.ps1` for the shared helpers.
+3. Write `docs/modules/<id>/uninstall.ps1`, which appends `{ Id; NeedsAdmin; Uninstall }`.
+4. Options are data: list them in the catalog entry as
+   `{ key, type, label, hint, default, required, pattern, values }` (types `text`, `url`,
+   `select`, `radio`, `checkbox`, `icon`, `multiselect`; `secret` is reserved). The form and its
+   validation are generated by `docs/app.js`; there is no per-module HTML or JavaScript.
 5. Add `tests/modules/<id>.Verify.ps1`. It returns failure strings and handles `-ExpectAbsent`.
 6. Add `tests/fixtures/<scenario>.json` and list the scenario in `validate.yml`'s matrix.
    `node tests/check-catalog.mjs` enforces steps 1–6.
@@ -156,7 +168,8 @@ One-time setup: **Settings → Pages → Source: GitHub Actions**. The `pages.ym
 ## Local testing
 
 ```
-node tests/check-catalog.mjs                       # any OS
+node tests/check-catalog.mjs                       # any OS (add --update-goldens after an intended output change)
+node tests/browser.mjs                             # any OS; needs `npm ci` and Chromium
 node tools/render.mjs tests/fixtures/default.json out
 pwsh ./tests/Run-Scenario.ps1 -Fixture tests/fixtures/default.json   # Windows only; changes the machine
 ```

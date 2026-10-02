@@ -5,25 +5,79 @@
       "label": "Google Chrome",
       "description": "Installs Chrome for this Windows user if it isn't on the computer yet. Does nothing if any Chrome is already installed. Leaves Chrome in place on uninstall.",
       "order": 10,
-      "needsAdmin": false,
-      "requires": []
+      "scope": "user",
+      "requires": [],
+      "options": []
     },
     {
       "id": "desktop-shortcut",
       "label": "Desktop shortcut to a website",
       "description": "Adds a desktop icon that opens one website, as an app window (no tabs or address bar) or a normal browser tab.",
       "order": 20,
-      "needsAdmin": false,
-      "requires": []
+      "scope": "user",
+      "requires": [],
+      "fileNameFrom": "name",
+      "options": [
+        {
+          "key": "destUrl",
+          "type": "url",
+          "label": "Website to open",
+          "hint": "Full address, e.g. https://example.com",
+          "placeholder": "https://example.com",
+          "required": true,
+          "param": "url"
+        },
+        {
+          "key": "name",
+          "type": "text",
+          "label": "Shortcut name",
+          "hint": "Shown under the desktop icon. Used as the downloaded file name too.",
+          "placeholder": "Example Site",
+          "maxLength": 60,
+          "default": "Website",
+          "sanitize": "filename",
+          "param": "name"
+        },
+        {
+          "key": "style",
+          "type": "radio",
+          "label": "How the icon opens the site",
+          "default": "App",
+          "values": [
+            { "value": "App", "label": "App window (no tabs or address bar)" },
+            { "value": "Url", "label": "Normal browser tab" }
+          ]
+        },
+        {
+          "key": "iconB64",
+          "type": "icon",
+          "label": "Icon (optional)",
+          "hint": ".ico, .png, or .jpg. Leave blank to use Chrome's icon."
+        }
+      ]
     },
     {
       "id": "ublock-lite",
       "label": "Ad blocker for Chrome (uBlock Origin Lite)",
       "description": "Force-installs uBlock Origin Lite via Chrome policy so it can't be accidentally disabled or removed.",
       "order": 30,
-      "needsAdmin": false,
+      "scope": "machine",
       "requires": [
         "chrome"
+      ],
+      "options": [
+        {
+          "key": "pinToolbar",
+          "type": "checkbox",
+          "label": "Pin the ad-blocker icon to Chrome's toolbar so it's visible",
+          "default": true
+        },
+        {
+          "key": "autoRestartChrome",
+          "type": "checkbox",
+          "label": "Automatically close and reopen Chrome if it's already running (otherwise it takes effect the next time Chrome opens on its own)",
+          "default": false
+        }
       ]
     }
   ]

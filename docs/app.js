@@ -21,28 +21,139 @@ const hashDiv = document.getElementById('hash');
 const auditPre = document.getElementById('audit-pre');
 const errorNotice = document.getElementById('error-notice');
 
-// ---- Per-module option collectors ------------------------------------------
-// One entry per catalog module that has options in index.html. Returns the module's options
-// object (exactly what docs/modules/<id>/install.ps1 receives as $Cfg) or throws a message
-// for the user. Modules without an entry are selected with {} as their options.
-const collectors = {
-  'desktop-shortcut': async () => {
-    const destUrl = document.getElementById('dest-url').value.trim();
-    if (!/^https?:\/\/.+/i.test(destUrl)) {
-      throw new Error('Please enter a full web address starting with http:// or https://');
+// ---- Data-driven option fields ----------------------------------------------
+// Every module's form comes from its "options" list in docs/catalog.json (types: text, url,
+// select, radio, checkbox, icon, secret, multiselect). collectOptions() returns exactly what
+// docs/modules/<id>/install.ps1 receives as $Cfg, or throws a message for the user.
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+function labelWithHint(opt, forId) {
+  const label = el('label', { htmlFor: forId || '' }, opt.label);
+  if (opt.hint) label.append(' ', el('span', { className: 'hint', textContent: opt.hint }));
+  return label;
+}
+
+function buildField(moduleId, opt) {
+  const id = `opt-${moduleId}-${opt.key}`;
+  const wrap = el('div', { className: 'field' });
+  wrap.dataset.key = opt.key;
+  const fromUrl = opt.param && params.get(opt.param);
+  switch (opt.type) {
+    case 'text':
+    case 'url':
+    case 'secret': {
+      const input = el('input', {
+        id,
+        type: opt.type === 'url' ? 'url' : opt.type === 'secret' ? 'password' : 'text',
+        placeholder: opt.placeholder || '',
+        value: fromUrl || opt.default || '',
+      });
+      if (opt.maxLength) input.maxLength = opt.maxLength;
+      wrap.append(labelWithHint(opt, id), input);
+      break;
     }
-    const name = sanitizeFilename(document.getElementById('shortcut-name').value) || 'Website';
-    const style = form.querySelector('input[name="shortcut-style"]:checked').value;
-    const opts = { destUrl, name, style };
-    const file = document.getElementById('icon-file').files[0];
-    if (file) opts.iconB64 = bytesToBase64(await window.AppinstallerIco.fileToIcoBytes(file));
-    return opts;
-  },
-  'ublock-lite': async () => ({
-    pinToolbar: document.getElementById('pin-toolbar').checked,
-    autoRestartChrome: document.getElementById('auto-restart').checked,
-  }),
-};
+    case 'select': {
+      const select = el('select', { id });
+      for (const v of opt.values) select.append(el('option', { value: v.value, textContent: v.label }));
+      select.value = fromUrl || opt.default || opt.values[0].value;
+      wrap.append(labelWithHint(opt, id), select);
+      break;
+    }
+    case 'radio': {
+      const set = el('fieldset');
+      set.append(el('legend', { textContent: opt.label }));
+      if (opt.hint) set.append(el('span', { className: 'hint', textContent: opt.hint }));
+      const chosen = opt.default || opt.values[0].value;
+      for (const v of opt.values) {
+        const radio = el('input', { type: 'radio', name: id, value: v.value, checked: v.value === chosen });
+        set.append(el('label', {}, radio, ' ' + v.label));
+      }
+      wrap.append(set);
+      break;
+    }
+    case 'checkbox': {
+      const row = el('div', { className: 'checkbox-row' });
+      row.append(el('input', { id, type: 'checkbox', checked: !!opt.default }), el('label', { htmlFor: id, textContent: opt.label }));
+      wrap.append(row);
+      break;
+    }
+    case 'multiselect': {
+      const set = el('fieldset');
+      set.append(el('legend', { textContent: opt.label }));
+      if (opt.hint) set.append(el('span', { className: 'hint', textContent: opt.hint }));
+      const chosen = new Set(opt.default || []);
+      for (const v of opt.values) {
+        const box = el('input', { type: 'checkbox', value: v.value, checked: chosen.has(v.value) });
+        set.append(el('label', {}, box, ' ' + v.label));
+      }
+      wrap.append(set);
+      break;
+    }
+    case 'icon': {
+      wrap.append(
+        labelWithHint(opt, id),
+        el('input', { id, type: 'file', accept: '.ico,.png,.jpg,.jpeg,image/x-icon,image/png,image/jpeg' }),
+      );
+      break;
+    }
+    default:
+      throw new Error(`Unknown option type '${opt.type}' for ${moduleId}.${opt.key}`);
+  }
+  return wrap;
+}
+
+async function collectOptions(m, card) {
+  const out = {};
+  for (const opt of m.options || []) {
+    const field = card.querySelector(`.field[data-key="${opt.key}"]`);
+    let value;
+    switch (opt.type) {
+      case 'text':
+      case 'url':
+      case 'secret': {
+        value = field.querySelector('input').value.trim();
+        if (opt.sanitize === 'filename') value = sanitizeFilename(value);
+        if (!value && opt.default) value = opt.default;
+        if (!value) {
+          if (opt.required) throw new Error(`Please fill in "${opt.label}".`);
+          continue;
+        }
+        if (opt.type === 'url' && !/^https?:\/\/.+/i.test(value)) {
+          throw new Error('Please enter a full web address starting with http:// or https://');
+        }
+        if (opt.pattern && !new RegExp(opt.pattern).test(value)) {
+          throw new Error(`"${opt.label}" isn't in the expected format.`);
+        }
+        break;
+      }
+      case 'select':
+        value = field.querySelector('select').value;
+        break;
+      case 'radio':
+        value = field.querySelector('input:checked').value;
+        break;
+      case 'checkbox':
+        value = field.querySelector('input').checked;
+        break;
+      case 'multiselect':
+        value = [...field.querySelectorAll('input:checked')].map((b) => b.value);
+        if (opt.required && value.length === 0) throw new Error(`Please pick at least one for "${opt.label}".`);
+        break;
+      case 'icon': {
+        const file = field.querySelector('input').files[0];
+        if (!file) continue;
+        value = bytesToBase64(await window.AppinstallerIco.fileToIcoBytes(file));
+        break;
+      }
+    }
+    out[opt.key] = value;
+  }
+  return out;
+}
 
 // ---- Loading ----------------------------------------------------------------
 const fetchText = (p) =>
@@ -59,6 +170,7 @@ const cachedText = (p) => {
 const catalogPromise = cachedText('./catalog.json').then(JSON.parse);
 cachedText('./core/installer-core.ps1'); // warm the cache while the user fills out the form
 cachedText('./core/uninstall-core.ps1');
+cachedText('./core/common.ps1');
 
 async function loadFragments(ids, kind) {
   const texts = await Promise.all(ids.map((id) => cachedText(`./modules/${id}/${kind}.ps1`)));
@@ -69,9 +181,6 @@ async function loadFragments(ids, kind) {
 const params = new URLSearchParams(location.search);
 
 function renderChecklist(catalog) {
-  const bodies = new Map(
-    [...modulesDiv.querySelectorAll('.module-body')].map((el) => [el.dataset.module, el]),
-  );
   const ordered = [...catalog.modules].sort((a, b) => a.order - b.order);
   for (const m of ordered) {
     const card = document.createElement('section');
@@ -89,11 +198,11 @@ function renderChecklist(catalog) {
     title.className = 'module-title';
     title.textContent = m.label;
     head.append(box, title);
-    if (m.needsAdmin) {
+    if (m.scope === 'machine') {
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.textContent = 'asks for admin';
-      badge.title = 'Shows one Windows "allow changes?" prompt when it runs';
+      badge.textContent = 'may ask for admin';
+      badge.title = 'Can show one Windows "allow changes?" prompt, only if this computer needs it';
       head.append(badge);
     }
     const desc = document.createElement('p');
@@ -105,12 +214,14 @@ function renderChecklist(catalog) {
     warn.hidden = true;
 
     card.append(head, desc, warn);
-    const body = bodies.get(m.id);
-    if (body) card.append(body);
+    if ((m.options || []).length > 0) {
+      const body = document.createElement('div');
+      body.className = 'module-body';
+      for (const opt of m.options) body.append(buildField(m.id, opt));
+      card.append(body);
+    }
     modulesDiv.append(card);
   }
-  // Drop option bodies for modules no longer in the catalog.
-  for (const [id, el] of bodies) if (!catalog.modules.some((m) => m.id === id)) el.remove();
 
   const sync = () => {
     const on = new Set([...modulesDiv.querySelectorAll('.module-toggle:checked')].map((b) => b.value));
@@ -135,12 +246,7 @@ function renderChecklist(catalog) {
 }
 
 catalogPromise
-  .then((catalog) => {
-    renderChecklist(catalog);
-    // Prefill from ?url=&name=
-    if (params.get('url')) document.getElementById('dest-url').value = params.get('url');
-    if (params.get('name')) document.getElementById('shortcut-name').value = params.get('name');
-  })
+  .then(renderChecklist) // option prefill from ?<param>= happens in buildField
   .catch((err) => showError('Could not load the list of setup items: ' + err.message));
 
 // ---- Output -----------------------------------------------------------------
@@ -189,16 +295,20 @@ form.addEventListener('submit', async (event) => {
     if (chosen.length === 0) throw new Error('Tick at least one item to set up.');
 
     const config = { modules: {}, generateUninstall: document.getElementById('gen-uninstall').checked };
-    for (const id of chosen) config.modules[id] = collectors[id] ? await collectors[id]() : {};
+    for (const id of chosen) {
+      const m = catalog.modules.find((x) => x.id === id);
+      config.modules[id] = await collectOptions(m, modulesDiv.querySelector(`.module[data-module="${id}"]`));
+    }
 
     const ids = selectedModules(catalog, config);
-    const [installCore, uninstallCore, installFrags] = await Promise.all([
+    const [installCore, uninstallCore, common, installFrags] = await Promise.all([
       cachedText('./core/installer-core.ps1'),
       cachedText('./core/uninstall-core.ps1'),
+      cachedText('./core/common.ps1'),
       loadFragments(ids, 'install'),
     ]);
-    const base = outputBaseName(config);
-    const installCmd = renderInstall({ core: installCore, catalog, fragments: installFrags, config });
+    const base = outputBaseName(catalog, config);
+    const installCmd = renderInstall({ core: installCore, common, catalog, fragments: installFrags, config });
 
     downloadsDiv.innerHTML = '';
     const installName = `Install-${base}.cmd`;
@@ -208,7 +318,7 @@ form.addEventListener('submit', async (event) => {
 
     if (config.generateUninstall) {
       const uninstallFrags = await loadFragments(ids, 'uninstall');
-      const uninstallCmd = renderUninstall({ core: uninstallCore, catalog, fragments: uninstallFrags, config });
+      const uninstallCmd = renderUninstall({ core: uninstallCore, common, catalog, fragments: uninstallFrags, config });
       const uninstallName = `Uninstall-${base}.cmd`;
       triggerDownload(uninstallName, uninstallCmd);
       addRedownloadButton(uninstallName, uninstallCmd);
