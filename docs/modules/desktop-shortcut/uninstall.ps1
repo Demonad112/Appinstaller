@@ -14,7 +14,7 @@ $Modules += [pscustomobject]@{
                 Write-Log "Removed shortcut $p"
             }
         }
-        $iconPath = Join-Path $env:LOCALAPPDATA "MomSetup\Icons\$safeName.ico"
+        $iconPath = Join-Path $env:LOCALAPPDATA "Appinstaller\Icons\$safeName.ico"
         if (Test-Path $iconPath) {
             Remove-Item -Path $iconPath -Force -ErrorAction SilentlyContinue
             Write-Log "Removed icon $iconPath"

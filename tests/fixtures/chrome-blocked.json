@@ -1,0 +1,16 @@
+{
+  "modules": {
+    "chrome": {},
+    "desktop-shortcut": {
+      "destUrl": "https://example.com/mom",
+      "name": "Example Site",
+      "style": "App"
+    }
+  },
+  "generateUninstall": true,
+  "_ci": {
+    "removeChrome": true,
+    "blockHosts": ["dl.google.com"],
+    "expectExit": 1
+  }
+}

@@ -31,7 +31,7 @@ A file called `install.log` is saved in a folder that opens if you paste this in
 search box next to the Windows Start button and press Enter:
 
 ```
-%LOCALAPPDATA%\MomSetup
+%LOCALAPPDATA%\Appinstaller
 ```
 
 Send that `install.log` file along when you ask for help — it says exactly what happened.

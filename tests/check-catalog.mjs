@@ -44,6 +44,9 @@ for (const f of fixtures) {
   try {
     const { install, uninstall } = renderAll(JSON.parse(readFileSync(path.join(fixtureDir, f), 'utf8')));
     for (const [kind, text] of [['install', install], ['uninstall', uninstall]]) {
+      if (text && !/^@set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(text)) {
+        errors.push(`${f}: ${kind} polyglot header must be one line ending in the errorlevel passthrough`);
+      }
       const left = text && text.match(/__[A-Z0-9_]+__/g);
       if (left) errors.push(`${f}: ${kind} output still contains ${[...new Set(left)].join(', ')}`);
     }

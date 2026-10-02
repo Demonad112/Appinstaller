@@ -9,6 +9,11 @@
 # Fixture "_ci" keys (test-harness only, ignored by the renderer):
 #   removeChrome  uninstall the machine's Chrome first, to exercise the chrome module's install path
 #   expectChrome  passed through to chrome.Verify.ps1 ("existing" | "direct")
+#   blockHosts    host names pointed at 127.0.0.1 in the hosts file for the run, so a download
+#                 genuinely fails (removed again in a finally block)
+#   expectExit    expected exit code of the 1st install (default 0). When non-zero the scenario
+#                 asserts that code plus a failure line in install.log, then stops: no verify,
+#                 no further runs
 
 param(
     [Parameter(Mandatory = $true)][string]$Fixture,
@@ -28,7 +33,7 @@ function Step([string]$Name) { Write-Host "`n==== $Name ====" -ForegroundColor C
 
 function Show-Logs {
     foreach ($log in @('install.log', 'uninstall.log')) {
-        $p = Join-Path $env:LOCALAPPDATA "MomSetup\$log"
+        $p = Join-Path $env:LOCALAPPDATA "Appinstaller\$log"
         if (Test-Path $p) { Write-Host "--- $log ---"; Get-Content $p | Write-Host }
     }
 }
@@ -71,37 +76,72 @@ function Test-Payload([string]$CmdPath) {
     }
 }
 
-# ---- Pre-conditions ---------------------------------------------------------
-if ($ci -and $ci.removeChrome) {
-    Step 'Remove machine Chrome (test setup)'
-    & (Join-Path $PSScriptRoot 'Remove-Chrome.ps1')
+$HostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+$HostsBackup = $null
+function Set-BlockedHosts([string[]]$Names) {
+    $script:HostsBackup = Get-Content -LiteralPath $HostsPath -Raw
+    $extra = ($Names | ForEach-Object { "127.0.0.1 $_" }) -join "`r`n"
+    Set-Content -LiteralPath $HostsPath -Value ($script:HostsBackup + "`r`n" + $extra + "`r`n")
+    ipconfig /flushdns | Out-Null
+    Write-Host "Blocked hosts: $($Names -join ', ')"
+}
+function Restore-Hosts {
+    if ($null -ne $script:HostsBackup) {
+        Set-Content -LiteralPath $HostsPath -Value $script:HostsBackup
+        ipconfig /flushdns | Out-Null
+        $script:HostsBackup = $null
+    }
 }
 
-# ---- Render -----------------------------------------------------------------
-Step 'Render'
-$rendered = node tools/render.mjs $Fixture $OutDir
-if ($LASTEXITCODE -ne 0) { throw "render.mjs failed" }
-$rendered | Write-Host
-$installCmd = ($rendered | Where-Object { $_ -like 'Wrote *Install-*' } | Select-Object -First 1).Substring(6)
-$uninstallCmd = ($rendered | Where-Object { $_ -like 'Wrote *Uninstall-*' } | Select-Object -First 1).Substring(6)
+try {
+    # ---- Pre-conditions ---------------------------------------------------------
+    if ($ci -and $ci.blockHosts) { Set-BlockedHosts @($ci.blockHosts) }
+    if ($ci -and $ci.removeChrome) {
+        Step 'Remove machine Chrome (test setup)'
+        & (Join-Path $PSScriptRoot 'Remove-Chrome.ps1')
+    }
 
-# ---- Lint -------------------------------------------------------------------
-Step 'Lint (PSScriptAnalyzer)'
-if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+    # ---- Render -----------------------------------------------------------------
+    Step 'Render'
+    $rendered = node tools/render.mjs $Fixture $OutDir
+    if ($LASTEXITCODE -ne 0) { throw "render.mjs failed" }
+    $rendered | Write-Host
+    $installCmd = ($rendered | Where-Object { $_ -like 'Wrote *Install-*' } | Select-Object -First 1).Substring(6)
+    $uninstallCmd = ($rendered | Where-Object { $_ -like 'Wrote *Uninstall-*' } | Select-Object -First 1).Substring(6)
+
+    # ---- Lint -------------------------------------------------------------------
+    Step 'Lint (PSScriptAnalyzer)'
+    if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+    }
+    Test-Payload $installCmd
+    Test-Payload $uninstallCmd
+
+    # ---- Install / idempotency / uninstall -------------------------------------
+    $expectExit = if ($ci -and $ci.expectExit) { [int]$ci.expectExit } else { 0 }
+    if ($expectExit -ne 0) {
+        # Negative test: the .cmd must report failure through its process exit code.
+        Step 'Install (expected to fail)'
+        & $installCmd
+        $code = $LASTEXITCODE
+        Show-Logs
+        if ($code -ne $expectExit) { throw "Expected exit code $expectExit from the install .cmd, got $code" }
+        $log = Get-Content (Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log') -Raw
+        if ($log -notmatch 'Install finished with failures') { throw "install.log has no 'finished with failures' line" }
+        Write-Host "`nScenario passed (failure propagated, exit code $code): $Fixture" -ForegroundColor Green
+        return
+    }
+    Invoke-Cmd 'Install (1st run)' $installCmd
+    Invoke-Verify 'after 1st install'
+    Invoke-Cmd 'Install (2nd run)' $installCmd
+    Invoke-Cmd 'Install (3rd run)' $installCmd
+    Invoke-Verify 'after 3rd install (idempotency)' -ExpectedCount 1
+    Invoke-Cmd 'Uninstall' $uninstallCmd
+    Invoke-Verify 'after uninstall' -ExpectAbsent
+
+    Show-Logs
+    Write-Host "`nScenario passed: $Fixture" -ForegroundColor Green
+} finally {
+    Restore-Hosts
 }
-Test-Payload $installCmd
-Test-Payload $uninstallCmd
-
-# ---- Install / idempotency / uninstall -------------------------------------
-Invoke-Cmd 'Install (1st run)' $installCmd
-Invoke-Verify 'after 1st install'
-Invoke-Cmd 'Install (2nd run)' $installCmd
-Invoke-Cmd 'Install (3rd run)' $installCmd
-Invoke-Verify 'after 3rd install (idempotency)' -ExpectedCount 1
-Invoke-Cmd 'Uninstall' $uninstallCmd
-Invoke-Verify 'after uninstall' -ExpectAbsent
-
-Show-Logs
-Write-Host "`nScenario passed: $Fixture" -ForegroundColor Green

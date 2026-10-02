@@ -70,5 +70,5 @@
     return assembleIco(frames, ICO_SIZES);
   }
 
-  window.MomSetupIco = { fileToIcoBytes };
+  window.AppinstallerIco = { fileToIcoBytes };
 })();

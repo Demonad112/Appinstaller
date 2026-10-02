@@ -55,7 +55,7 @@ export function buildPolyglot(psPayload) {
   const header =
     '@set "SELF=%~f0" & @powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
     '-Command "$c=[IO.File]::ReadAllText($env:SELF);iex $c.Substring(' +
-    "$c.IndexOf('<'+'#PSBEGIN#'+'>')+11)\" & @exit /b";
+    "$c.IndexOf('<'+'#PSBEGIN#'+'>')+11)\" & @if errorlevel 1 (exit /b 1) else (exit /b 0)";
   const normalized = psPayload.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
   return [header, MARKER, normalized].join('\r\n');
 }

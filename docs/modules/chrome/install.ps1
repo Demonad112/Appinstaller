@@ -1,7 +1,7 @@
 # Google Chrome, installed per-user (no admin) only when no Chrome is present at all.
 # Uses Google's per-user standalone installer, run only if its Authenticode signature is valid
 # and from Google LLC. Never reinstalls, upgrades, or downgrades an existing Chrome.
-# Records what it did in %LOCALAPPDATA%\MomSetup\chrome-state.json.
+# Records what it did in %LOCALAPPDATA%\Appinstaller\chrome-state.json.
 # Options: none
 #
 # Why not winget: verified on windows-latest that `winget install Google.Chrome --scope user`
@@ -13,7 +13,7 @@ $ChromeDirectUrl = 'https://dl.google.com/tag/s/appguid%3D%7B8A69D345-D564-463C-
 $ChromeInstallTimeoutSec = 900
 
 function Install-ChromeDirect {
-    $exe = Join-Path $env:TEMP 'MomSetup-ChromeStandaloneSetup64.exe'
+    $exe = Join-Path $env:TEMP 'Appinstaller-ChromeStandaloneSetup64.exe'
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         $ProgressPreference = 'SilentlyContinue'   # the progress bar makes 5.1 downloads crawl
@@ -49,7 +49,7 @@ $Modules += [pscustomobject]@{
         $Ctx.ChromePath = Find-Chrome
         if (-not $Ctx.ChromePath) { throw "Chrome installer finished but chrome.exe was not found" }
 
-        $state = [ordered]@{ chromeInstalledBy = 'momsetup'; method = 'direct'; path = $Ctx.ChromePath; at = (Get-Date).ToString('o') }
+        $state = [ordered]@{ chromeInstalledBy = 'appinstaller'; method = 'direct'; path = $Ctx.ChromePath; at = (Get-Date).ToString('o') }
         $state | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $LogDir 'chrome-state.json')
         Write-Log "Chrome installed at $($Ctx.ChromePath)"
         return "Google Chrome installed."
