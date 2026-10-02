@@ -183,6 +183,8 @@ try {
         $wantLog = if ($ci -and $ci.expectLog) { [string]$ci.expectLog } else { 'Install finished with failures' }
         if ($log -notmatch $wantLog) { throw "install.log has no line matching '$wantLog'" }
         Write-Host "`nScenario passed (failure propagated, exit code $code): $Fixture" -ForegroundColor Green
+        # The step's own exit status is the last native exit code; the expected failure must not leak.
+        $global:LASTEXITCODE = 0
         return
     }
     $logBefore = (Get-InstallLogLines).Count
