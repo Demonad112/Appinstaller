@@ -12,8 +12,15 @@
 #   blockHosts    host names pointed at 127.0.0.1 in the hosts file for the run, so a download
 #                 genuinely fails (removed again in a finally block)
 #   expectExit    expected exit code of the 1st install (default 0). When non-zero the scenario
-#                 asserts that code plus a failure line in install.log, then stops: no verify,
-#                 no further runs
+#                 asserts that code plus a log line (expectLog, default 'Install finished with
+#                 failures') in install.log, then stops: no verify, no further runs
+#   expectLog     regex the log must match when expectExit is non-zero
+#   seedHklmForcelist  creates a machine-wide Chrome ExtensionInstallForcelist (dummy entry) first,
+#                 so ublock-lite must write HKLM from the elevated child; removed again in finally
+#   expectElevated  whether the 1st install must have run the elevated machine phase (default
+#                 false: scenarios without a machine-wide policy must never elevate)
+#   holdLock      the harness holds the Appinstaller run lock while the .cmd runs (use with
+#                 expectExit 1 and expectLog 'already in progress')
 
 param(
     [Parameter(Mandatory = $true)][string]$Fixture,
@@ -93,8 +100,49 @@ function Restore-Hosts {
     }
 }
 
+$ForcelistKey = 'HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist'
+$SeedName = 'appinstaller-ci-seed'
+$script:SeedKeyExisted = $false
+$script:HeldLock = $null
+function Set-SeedForcelist {
+    $script:SeedKeyExisted = Test-Path $ForcelistKey
+    if (-not $script:SeedKeyExisted) { New-Item -Path $ForcelistKey -Force | Out-Null }
+    New-ItemProperty -Path $ForcelistKey -Name $SeedName -Value 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;https://clients2.google.com/service/update2/crx' -PropertyType String -Force | Out-Null
+    Write-Host 'Seeded machine-wide Chrome forcelist (HKLM).'
+}
+function Remove-SeedForcelist {
+    if (-not (Test-Path $ForcelistKey)) { return }
+    Remove-ItemProperty -Path $ForcelistKey -Name $SeedName -ErrorAction SilentlyContinue
+    if (-not $script:SeedKeyExisted) { Remove-Item -Path $ForcelistKey -Force -ErrorAction SilentlyContinue }
+}
+
+function Get-InstallLogLines { 
+    $p = Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log'
+    if (Test-Path $p) { return @(Get-Content $p) } else { return @() }
+}
+
+# Asserts whether the 1st install ran the elevated machine phase, that it finished its modules,
+# and that it cleaned up its run folder.
+function Assert-Phase([string[]]$NewLog, [bool]$ExpectElevated) {
+    $start = ($NewLog | Select-String -SimpleMatch 'phase=machine start' | Select-Object -First 1)
+    $elevated = [bool]$start
+    if ($elevated -ne $ExpectElevated) { Show-Logs; throw "Expected elevated machine phase = $ExpectElevated, got $elevated" }
+    if ($elevated) {
+        $afterIdx = [array]::IndexOf($NewLog, $start.Line)
+        $after = $NewLog[$afterIdx..($NewLog.Count - 1)]
+        if (-not ($after -match "Module 'ublock-lite': done")) { Show-Logs; throw "Machine phase did not finish ublock-lite" }
+        if (-not ($after -match 'phase=machine end \(ok=True\)')) { Show-Logs; throw 'Machine phase did not end ok' }
+        $leftover = @(Get-ChildItem -LiteralPath (Join-Path $env:ProgramData 'Appinstaller') -Directory -Filter 'run-*' -ErrorAction SilentlyContinue)
+        if ($leftover.Count -gt 0) { throw "Run folder(s) not cleaned up: $($leftover.Name -join ', ')" }
+        Write-Host 'Elevated machine phase ran and cleaned up.' -ForegroundColor Green
+    } else {
+        Write-Host 'No elevation (as expected).' -ForegroundColor Green
+    }
+}
+
 try {
     # ---- Pre-conditions ---------------------------------------------------------
+    if ($ci -and $ci.seedHklmForcelist) { Set-SeedForcelist }
     if ($ci -and $ci.blockHosts) { Set-BlockedHosts @($ci.blockHosts) }
     if ($ci -and $ci.removeChrome) {
         Step 'Remove machine Chrome (test setup)'
@@ -123,16 +171,23 @@ try {
     if ($expectExit -ne 0) {
         # Negative test: the .cmd must report failure through its process exit code.
         Step 'Install (expected to fail)'
+        if ($ci -and $ci.holdLock) {
+            $script:HeldLock = New-Object System.Threading.Mutex($true, 'Global\Appinstaller.run')
+            Write-Host 'Harness is holding the run lock.'
+        }
         & $installCmd
         $code = $LASTEXITCODE
         Show-Logs
         if ($code -ne $expectExit) { throw "Expected exit code $expectExit from the install .cmd, got $code" }
         $log = Get-Content (Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log') -Raw
-        if ($log -notmatch 'Install finished with failures') { throw "install.log has no 'finished with failures' line" }
+        $wantLog = if ($ci -and $ci.expectLog) { [string]$ci.expectLog } else { 'Install finished with failures' }
+        if ($log -notmatch $wantLog) { throw "install.log has no line matching '$wantLog'" }
         Write-Host "`nScenario passed (failure propagated, exit code $code): $Fixture" -ForegroundColor Green
         return
     }
+    $logBefore = (Get-InstallLogLines).Count
     Invoke-Cmd 'Install (1st run)' $installCmd
+    Assert-Phase @((Get-InstallLogLines) | Select-Object -Skip $logBefore) ([bool]($ci -and $ci.expectElevated))
     Invoke-Verify 'after 1st install'
     Invoke-Cmd 'Install (2nd run)' $installCmd
     Invoke-Cmd 'Install (3rd run)' $installCmd
@@ -144,4 +199,6 @@ try {
     Write-Host "`nScenario passed: $Fixture" -ForegroundColor Green
 } finally {
     Restore-Hosts
+    if ($script:HeldLock) { try { $script:HeldLock.ReleaseMutex() } catch {}; $script:HeldLock.Dispose() }
+    if ($ci -and $ci.seedHklmForcelist) { Remove-SeedForcelist }
 }

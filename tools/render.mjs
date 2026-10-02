@@ -71,9 +71,9 @@ export function renderAll(rawConfig) {
   if (ids.length === 0) throw new Error('Config selects no modules');
   return {
     baseName: outputBaseName(catalog, config),
-    install: renderInstall({ core: read('core', 'installer-core.ps1'), catalog, fragments: loadFragments(ids, 'install'), config }),
+    install: renderInstall({ core: read('core', 'installer-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(ids, 'install'), config }),
     uninstall: config.generateUninstall
-      ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), catalog, fragments: loadFragments(ids, 'uninstall'), config })
+      ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(ids, 'uninstall'), config })
       : null,
   };
 }

@@ -58,6 +58,8 @@ jobs:
           - chrome-fresh
           - chrome-blocked
           - default-icon
+          - machine-scope
+          - run-lock
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

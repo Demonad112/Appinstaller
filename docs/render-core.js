@@ -66,14 +66,14 @@ export function selectedModules(catalog, config) {
 
 export function buildPolyglot(psPayload) {
   const header =
-    '@set "SELF=%~f0" & @powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
+    '@set "APPI_ARGS=%*" & @set "SELF=%~f0" & @powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
     '-Command "$c=[IO.File]::ReadAllText($env:SELF);iex $c.Substring(' +
     "$c.IndexOf('<'+'#PSBEGIN#'+'>')+11)\" & @if errorlevel 1 (exit /b 1) else (exit /b 0)";
   const normalized = psPayload.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
   return [header, MARKER, normalized].join('\r\n');
 }
 
-function assemble(coreText, ids, fragments, runtimeConfig) {
+function assemble(coreText, commonText, ids, fragments, runtimeConfig) {
   const body = ids
     .map((id) => {
       const text = fragments[id];
@@ -83,19 +83,31 @@ function assemble(coreText, ids, fragments, runtimeConfig) {
     .join('\n');
   const configB64 = utf8ToBase64(JSON.stringify(runtimeConfig));
   // split/join rather than String.replace: no `$&`-style special patterns in the inserted text.
-  return coreText.split('__CONFIG_B64__').join(configB64).split('__MODULES__').join(body);
+  return coreText
+    .split('__COMMON__').join(commonText.replace(/\s+$/, ''))
+    .split('__CONFIG_B64__').join(configB64)
+    .split('__MODULES__').join(body);
+}
+
+// The runtime config the core decodes: per-module options plus each module's scope (the catalog
+// is the single source of truth for scope; the core uses it to pick the user or machine phase).
+function runtimeConfig(catalog, ids, modules) {
+  const scopes = {};
+  for (const id of ids) scopes[id] = catalog.modules.find((m) => m.id === id).scope;
+  return { modules, scopes };
 }
 
 // fragments: { [moduleId]: install.ps1 text } for (at least) every selected module.
-export function renderInstall({ core, catalog, fragments, config }) {
+// common: docs/core/common.ps1 text.
+export function renderInstall({ core, common, catalog, fragments, config }) {
   const ids = selectedModules(catalog, config);
   const modules = {};
   for (const id of ids) modules[id] = config.modules[id];
-  return buildPolyglot(assemble(core, ids, fragments, { modules }));
+  return buildPolyglot(assemble(core, common, ids, fragments, runtimeConfig(catalog, ids, modules)));
 }
 
 // Same as renderInstall, minus the icon payloads the uninstaller never needs.
-export function renderUninstall({ core, catalog, fragments, config }) {
+export function renderUninstall({ core, common, catalog, fragments, config }) {
   const ids = selectedModules(catalog, config);
   const modules = {};
   for (const id of ids) {
@@ -103,5 +115,5 @@ export function renderUninstall({ core, catalog, fragments, config }) {
     for (const k of iconKeys(catalog, id)) delete rest[k];
     modules[id] = rest;
   }
-  return buildPolyglot(assemble(core, ids, fragments, { modules }));
+  return buildPolyglot(assemble(core, common, ids, fragments, runtimeConfig(catalog, ids, modules)));
 }

@@ -170,6 +170,7 @@ const cachedText = (p) => {
 const catalogPromise = cachedText('./catalog.json').then(JSON.parse);
 cachedText('./core/installer-core.ps1'); // warm the cache while the user fills out the form
 cachedText('./core/uninstall-core.ps1');
+cachedText('./core/common.ps1');
 
 async function loadFragments(ids, kind) {
   const texts = await Promise.all(ids.map((id) => cachedText(`./modules/${id}/${kind}.ps1`)));
@@ -300,13 +301,14 @@ form.addEventListener('submit', async (event) => {
     }
 
     const ids = selectedModules(catalog, config);
-    const [installCore, uninstallCore, installFrags] = await Promise.all([
+    const [installCore, uninstallCore, common, installFrags] = await Promise.all([
       cachedText('./core/installer-core.ps1'),
       cachedText('./core/uninstall-core.ps1'),
+      cachedText('./core/common.ps1'),
       loadFragments(ids, 'install'),
     ]);
     const base = outputBaseName(catalog, config);
-    const installCmd = renderInstall({ core: installCore, catalog, fragments: installFrags, config });
+    const installCmd = renderInstall({ core: installCore, common, catalog, fragments: installFrags, config });
 
     downloadsDiv.innerHTML = '';
     const installName = `Install-${base}.cmd`;
@@ -316,7 +318,7 @@ form.addEventListener('submit', async (event) => {
 
     if (config.generateUninstall) {
       const uninstallFrags = await loadFragments(ids, 'uninstall');
-      const uninstallCmd = renderUninstall({ core: uninstallCore, catalog, fragments: uninstallFrags, config });
+      const uninstallCmd = renderUninstall({ core: uninstallCore, common, catalog, fragments: uninstallFrags, config });
       const uninstallName = `Uninstall-${base}.cmd`;
       triggerDownload(uninstallName, uninstallCmd);
       addRedownloadButton(uninstallName, uninstallCmd);

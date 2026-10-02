@@ -1,22 +1,30 @@
 {
   "chrome-blocked": {
-    "install": "1a72a0d76397b73b2db84b512aeedf8c055aceebd089be04093aff9aeb300968",
-    "uninstall": "07b3bdb5f4ffd6fd74a830f9c108a15fc2213628c33354ec807b8e54833fde80"
+    "install": "e3563f7144a90abffca71a523dc18ed3dd4d3a8514015c5cc91c229655e0c03c",
+    "uninstall": "55eaafacb9b2000d870071e07e2de69058fe5f922212c069d4f830fae816cd00"
   },
   "chrome-fresh": {
-    "install": "79c4cb0abbfb8a45b98ce25be0a241583092e4b6c998bc51003691050197d1aa",
-    "uninstall": "cb6a9e7e34adf2dc8202fa4ea4d994880a116c2509b04b0fa639826e59852cb8"
+    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
+    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
   },
   "chrome-present": {
-    "install": "79c4cb0abbfb8a45b98ce25be0a241583092e4b6c998bc51003691050197d1aa",
-    "uninstall": "cb6a9e7e34adf2dc8202fa4ea4d994880a116c2509b04b0fa639826e59852cb8"
+    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
+    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
   },
   "default-icon": {
-    "install": "8cafab05ae6fb8b13d94a2b02e9c3cd50bbcb7df528ddda479638e2f636af04f",
-    "uninstall": "df30c8a70af107b1e59c9bc7b4b6c83b501c66098c3505ff5747dbb054e1393b"
+    "install": "71a3d2eb86fbe163e96238eb062cd1c54b4ee6aa50944c3b4eff7a7fe31cb926",
+    "uninstall": "888bf9c373fbe85193320fa66ddfe6b80d0b0c7b9ac0ca0692a1f070c142591e"
   },
   "default": {
-    "install": "83e896c63b4c4f8fd6f2409199302f1d1f50791eb41f92eb638daa5a07b70b09",
-    "uninstall": "349fe437f87f07694e6508c49e81a1d652101c9f830d8c35564465ce0dc4e703"
+    "install": "fc103e193b2fc3b35405f6c50b86907b57f546fa294e6acf3e1e18c9a4ecc28f",
+    "uninstall": "5c8bf5e898c9b089ae591b0da17c67692abc3233e8e6c0df107cea83e059a43e"
+  },
+  "machine-scope": {
+    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
+    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
+  },
+  "run-lock": {
+    "install": "47b4d6ce445178cfc32d1192c918a396984fd685ae546a7d30f9b8fcb58a055d",
+    "uninstall": "acebd646d2252509de1904508f4f995e94d669e7a44602e2c093ae1510b0f521"
   }
 }

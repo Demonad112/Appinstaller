@@ -81,7 +81,7 @@ for (const m of catalog.modules) {
 
 for (const core of ['installer-core.ps1', 'uninstall-core.ps1']) {
   const text = readFileSync(path.join(root, 'docs/core', core), 'utf8');
-  for (const tok of ['__CONFIG_B64__', '__MODULES__']) {
+  for (const tok of ['__COMMON__', '__CONFIG_B64__', '__MODULES__']) {
     const n = text.split(tok).length - 1;
     if (n !== 1) errors.push(`docs/core/${core}: '${tok}' appears ${n} times, expected exactly 1`);
   }
@@ -93,6 +93,11 @@ const updateGoldens = process.argv.includes('--update-goldens');
 const golden = existsSync(goldenPath) ? JSON.parse(readFileSync(goldenPath, 'utf8')) : {};
 const newGolden = {};
 
+const commonText = readFileSync(path.join(root, 'docs/core/common.ps1'), 'utf8');
+for (const tok of ['__COMMON__', '__CONFIG_B64__', '__MODULES__']) {
+  if (commonText.includes(tok)) errors.push(`docs/core/common.ps1 must not contain the placeholder '${tok}'`);
+}
+
 const fixtureDir = path.join(root, 'tests/fixtures');
 const fixtures = readdirSync(fixtureDir).filter((f) => f.endsWith('.json'));
 const workflow = readFileSync(path.join(root, '.github/workflows/validate.yml'), 'utf8');
@@ -103,7 +108,7 @@ for (const f of fixtures) {
     const { install, uninstall } = renderAll(JSON.parse(readFileSync(path.join(fixtureDir, f), 'utf8')));
     newGolden[name] = { install: sha256(install), uninstall: uninstall ? sha256(uninstall) : null };
     for (const [kind, text] of [['install', install], ['uninstall', uninstall]]) {
-      if (text && !/^@set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(text)) {
+      if (text && !/^@set "APPI_ARGS=%\*" & @set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(text)) {
         errors.push(`${f}: ${kind} polyglot header must be one line ending in the errorlevel passthrough`);
       }
       const left = text && text.match(/__[A-Z0-9_]+__/g);
