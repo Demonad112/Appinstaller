@@ -1,0 +1,5 @@
+{
+  "modules": { "app-7zip-bundled": { "installer": "tests/assets/7z2603-x64.exe" } },
+  "generateUninstall": true,
+  "_ci": { "removeApps": ["7zip"], "corruptBundledFile": true, "expectExit": 1, "expectLog": "SHA-256 mismatch", "expectApp": "fresh" }
+}

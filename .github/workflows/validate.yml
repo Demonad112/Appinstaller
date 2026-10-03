@@ -28,6 +28,10 @@ jobs:
         with:
           node-version: '22'
       - run: node tests/check-catalog.mjs
+      # Key-pattern guard: the self-test plants fake keys and must catch them, then the real scan
+      # covers tracked files and every fixture's rendered output.
+      - run: node tests/check-secrets.mjs --self-test
+      - run: node tests/check-secrets.mjs
 
   # Drives the real configurator page in headless Chromium for every fixture and asserts the
   # downloaded .cmd == the Node render == tests/golden.json.
@@ -66,6 +70,9 @@ jobs:
           - app-blocked
           - app-tampered
           - app-adobe-reader
+          - app-7zip-bundled
+          - app-bundled-tampered
+          - test-secret
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

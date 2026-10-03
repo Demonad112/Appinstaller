@@ -17,13 +17,15 @@ const errors = [];
 const rawCatalog = loadRawCatalog();
 const catalog = loadCatalog(); // expanded: hand-written modules + one app-<id> module per docs/apps/<id>.json
 
-const OPTION_TYPES = ['text', 'url', 'select', 'radio', 'checkbox', 'icon', 'secret', 'multiselect'];
+const OPTION_TYPES = ['text', 'url', 'select', 'radio', 'checkbox', 'icon', 'secret', 'multiselect', 'file'];
+const SAFE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const NEEDS_VALUES = ['select', 'radio', 'multiselect'];
 
 function checkSchema(m) {
   const at = `module '${m.id}'`;
   if ('needsAdmin' in m) errors.push(`${at}: needsAdmin was replaced by scope: "user"|"machine"`);
   if (!['user', 'machine'].includes(m.scope)) errors.push(`${at}: scope must be "user" or "machine"`);
+  if (m.test !== undefined && m.test !== true) errors.push(`${at}: test must be true or absent`);
   if (!Array.isArray(m.options)) { errors.push(`${at}: options must be an array`); return; }
   const keys = new Set();
   for (const o of m.options) {
@@ -32,7 +34,15 @@ function checkSchema(m) {
     if (keys.has(o.key)) errors.push(`${oat}: duplicate key`);
     keys.add(o.key);
     if (!OPTION_TYPES.includes(o.type)) { errors.push(`${oat}: unknown type '${o.type}'`); continue; }
-    if (o.type === 'secret') errors.push(`${oat}: secret options are not allowed until the secrets batch (they would be embedded in the .cmd)`);
+    // Secret values and file bytes go to the bundle's files/ folder, never into a .cmd: no
+    // default (would sit in the catalog) and no URL prefill (would sit in a link or history).
+    if (['secret', 'file'].includes(o.type)) {
+      if (o.default !== undefined) errors.push(`${oat}: ${o.type} options cannot have a default`);
+      if (o.param !== undefined) errors.push(`${oat}: ${o.type} options cannot be prefilled from the URL (param)`);
+    }
+    if (o.type === 'file' ? !SAFE_FILE_NAME.test(o.fileName || '') : o.fileName !== undefined) {
+      errors.push(`${oat}: file options need a safe fileName (letters, digits, . _ -); other types must not have one`);
+    }
     if (!o.label) errors.push(`${oat}: missing label`);
     if (NEEDS_VALUES.includes(o.type)) {
       if (!Array.isArray(o.values) || o.values.length === 0 || o.values.some((v) => !v || typeof v.value !== 'string' || !v.label)) {
@@ -61,7 +71,7 @@ function checkSchema(m) {
 // Admission rules (CLAUDE.md): pinned winget ID (the engine always adds --source winget --exact)
 // or a signature/hash-checked URL, a detect step, an uninstall path. Unknown keys are errors so a
 // typo can't silently weaken a check.
-const APP_KEYS = ['id', 'label', 'description', 'order', 'scope', 'requires', 'source', 'detect', 'uninstall', 'notes'];
+const APP_KEYS = ['id', 'label', 'description', 'order', 'scope', 'requires', 'source', 'detect', 'uninstall', 'notes', 'test'];
 const ENV_ROOTED = /^%(ProgramFiles|ProgramFiles\(x86\)|ProgramW6432|LOCALAPPDATA|APPDATA|ProgramData|SystemRoot|windir|USERPROFILE)%[\\/]/i;
 const WINGET_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)+$/;
 
@@ -90,15 +100,22 @@ function checkApp(id, a) {
   if (s.type === 'winget') {
     unknownKeys(s, ['type', 'id'], `${at} source`);
     if (!WINGET_ID.test(s.id || '')) errors.push(`${at}: source.id '${s.id}' is not a winget package ID (Publisher.Package)`);
-  } else if (s.type === 'url') {
-    unknownKeys(s, ['type', 'url', 'sha256', 'signer', 'args', 'timeoutSec'], `${at} source`);
-    if (!/^https:\/\/[^\s/]+\/\S+$/.test(s.url || '')) errors.push(`${at}: source.url must be an https:// URL`);
-    if (s.sha256 === undefined && s.signer === undefined) errors.push(`${at}: a url source needs sha256 and/or signer (never run an unverified download)`);
+  } else if (s.type === 'url' || s.type === 'bundled') {
+    if (s.type === 'url') {
+      unknownKeys(s, ['type', 'url', 'sha256', 'signer', 'args', 'timeoutSec'], `${at} source`);
+      if (!/^https:\/\/[^\s/]+\/\S+$/.test(s.url || '')) errors.push(`${at}: source.url must be an https:// URL`);
+    } else {
+      // The installer ships in the bundle's files/ folder under this name.
+      unknownKeys(s, ['type', 'file', 'sha256', 'signer', 'args', 'timeoutSec'], `${at} source`);
+      if (!SAFE_FILE_NAME.test(s.file || '') || !/\.(exe|msi)$/i.test(s.file)) errors.push(`${at}: source.file must be a plain .exe/.msi file name (letters, digits, . _ -)`);
+    }
+    if (s.sha256 === undefined && s.signer === undefined) errors.push(`${at}: a ${s.type} source needs sha256 and/or signer (never run an unverified installer)`);
     if (s.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(s.sha256)) errors.push(`${at}: sha256 must be 64 lowercase hex characters`);
     if (s.signer !== undefined) checkRegex(s.signer, `${at} source.signer`);
     checkArgs(s.args, `${at} source.args (silent switches)`);
     if (s.timeoutSec !== undefined && !(Number.isInteger(s.timeoutSec) && s.timeoutSec > 0 && s.timeoutSec <= 3600)) errors.push(`${at}: timeoutSec must be 1-3600`);
-  } else errors.push(`${at}: source.type must be "winget" or "url"`);
+  } else errors.push(`${at}: source.type must be "winget", "url" or "bundled"`);
+  if (a.test !== undefined && a.test !== true) errors.push(`${at}: test must be true or absent`);
 
   if (!Array.isArray(a.detect) || a.detect.length === 0) errors.push(`${at}: detect must be a non-empty array`);
   else {
@@ -129,10 +146,16 @@ function checkApp(id, a) {
 
 const appIds = rawCatalog.apps || [];
 if (new Set(appIds).size !== appIds.length) errors.push('catalog.json "apps" has duplicate ids');
+const bundledFiles = new Set();
 for (const id of appIds) {
   const f = path.join(root, 'docs/apps', `${id}.json`);
   if (!existsSync(f)) { errors.push(`catalog app '${id}': missing docs/apps/${id}.json`); continue; }
-  checkApp(id, JSON.parse(readFileSync(f, 'utf8')));
+  const def = JSON.parse(readFileSync(f, 'utf8'));
+  checkApp(id, def);
+  if (def.source && def.source.type === 'bundled') {
+    if (bundledFiles.has(def.source.file)) errors.push(`app '${id}': bundled file name '${def.source.file}' is used by another app (both would land in files/)`);
+    bundledFiles.add(def.source.file);
+  }
   if (rawCatalog.modules.some((m) => m.id === `app-${id}`)) errors.push(`app '${id}': module id 'app-${id}' is already used in catalog.json`);
 }
 const appDir = path.join(root, 'docs/apps');
@@ -151,7 +174,7 @@ for (const m of catalog.modules) {
   // the 'app' fragment; each app needs its own fixture.
   const frag = m.fragment || m.id;
   const wanted = [`docs/modules/${frag}/install.ps1`, `docs/modules/${frag}/uninstall.ps1`, `tests/modules/${frag}.Verify.ps1`];
-  if (m.fragment) wanted.push(`tests/fixtures/${m.id}.json`);
+  if (m.fragment) wanted.push(`docs/modules/${frag}/common.ps1`, `tests/fixtures/${m.id}.json`);
   for (const f of wanted) {
     if (!existsSync(path.join(root, f))) errors.push(`module '${m.id}': missing ${f}`);
   }
@@ -197,8 +220,8 @@ for (const f of fixtures) {
   const name = f.replace(/\.json$/, '');
   if (!new RegExp(`^\\s*-\\s*${name}\\s*$`, 'm').test(workflow)) errors.push(`fixture ${f} is not in validate.yml's scenario matrix`);
   try {
-    const { install, uninstall } = renderAll(JSON.parse(readFileSync(path.join(fixtureDir, f), 'utf8')));
-    newGolden[name] = { install: sha256(install), uninstall: uninstall ? sha256(uninstall) : null };
+    const { install, uninstall, zip } = await renderAll(JSON.parse(readFileSync(path.join(fixtureDir, f), 'utf8')));
+    newGolden[name] = { install: sha256(install), uninstall: uninstall ? sha256(uninstall) : null, zip: zip ? sha256(zip) : null };
     for (const [kind, text] of [['install', install], ['uninstall', uninstall]]) {
       if (text && !/^@set "APPI_ARGS=%\*" & @set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(text)) {
         errors.push(`${f}: ${kind} polyglot header must be one line ending in the errorlevel passthrough`);
@@ -220,7 +243,7 @@ if (updateGoldens) {
   for (const [name, h] of Object.entries(newGolden)) {
     const g = golden[name];
     if (!g) errors.push(`no golden hash for fixture '${name}' (run with --update-goldens)`);
-    else for (const k of ['install', 'uninstall']) {
+    else for (const k of ['install', 'uninstall', 'zip']) {
       if (g[k] !== h[k]) errors.push(`golden mismatch for ${name} ${k}: rendered output changed (expected ${g[k]}, got ${h[k]}); if intended, run node tests/check-catalog.mjs --update-goldens`);
     }
   }
