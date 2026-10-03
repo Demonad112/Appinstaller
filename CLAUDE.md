@@ -9,6 +9,8 @@ The site is static (`docs/`, GitHub Pages from `main`). Windows CI is the only p
 - `docs/core/common.ps1` shared helpers + two-phase driver, spliced into both cores at the common placeholder
 - `docs/core/{installer,uninstall}-core.ps1` config decode + entry point
 - `docs/modules/<id>/{install,uninstall}.ps1` fragments
+- `docs/apps/<id>.json` curated apps (listed in `catalog.json` `"apps"`); `expandCatalog()` turns each into module `app-<id>` that shares `docs/modules/app/{install,uninstall}.ps1` (`fragment: "app"`, emitted once, one `$Modules += New-AppModule -Id ...` line per app)
+- `tools/Probe-Winget.ps1` + `.github/workflows/probe-winget.yml` admission probe: run it before writing an app JSON
 - `tests/` `check-catalog.mjs` (Linux; schema + golden hashes), `browser.mjs` (Playwright), `Run-Scenario.ps1` (Windows), `modules/<id>.Verify.ps1`, `fixtures/*.json`, `golden.json`
 - `handoffs/` per-batch handoff + next-batch prompt; the plan lives in the latest handoff
 
@@ -28,7 +30,8 @@ Options are catalog data (`options`); the UI and validation are generated, never
 - Each core placeholder (`__COMMON__`, `__CONFIG_B64__`, `__MODULES__`) appears exactly once per core, comments included, and never in `common.ps1`.
 - Installs are idempotent, have an uninstall path, and verify downloads by Authenticode signer or SHA-256.
 - Admission for a new app: pinned winget ID (`--source winget`) or signature/hash-checked URL, a detect step, an uninstall, proven on windows-latest.
-- Every module ships install, uninstall, a Verify script, a fixture and a matrix entry in `validate.yml`.
+- Every module ships install, uninstall, a Verify script, a fixture and a matrix entry in `validate.yml`. An app ships its JSON, `tests/fixtures/app-<id>.json` and a matrix entry (Verify is the shared `tests/modules/app.Verify.ps1`).
+- App helpers live in `docs/modules/app/*`, not `common.ps1`, so existing goldens stay byte-identical. Uninstall removes only apps recorded in `apps-state.json`. Native exit codes: use `Invoke-AppNative` (PS 5.1 leaves `ExitCode` empty without the cached handle and `[int]$null` is 0).
 - The polyglot header is a single line (`@set "APPI_ARGS=%*"` first) ending in an errorlevel passthrough; `chrome-blocked` proves a failure exits non-zero.
 - Rendered output is pinned by `tests/golden.json`; after an intended change run `node tests/check-catalog.mjs --update-goldens` and review the diff. `tests/browser.mjs` proves the website download equals the Node render.
 - Secrets: never write keys, passwords or credentials into the repo, fixtures, logs or replies; use `{{PLACEHOLDER}}`.
