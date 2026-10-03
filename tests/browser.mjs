@@ -47,7 +47,7 @@ async function fillModule(page, id, opts) {
     const opt = (catalog.modules.find((m) => m.id === id).options || []).find((o) => o.key === key || (o.type === 'icon' && key === o.key.replace(/B64$/, '') + 'Path'));
     if (!opt) throw new Error(`fixture option '${id}.${key}' has no catalog option`);
     const field = card.locator(`[data-key="${opt.key}"]`);
-    if (opt.type === 'icon') await field.locator('input[type=file]').setInputFiles(value);
+    if (opt.type === 'icon' || opt.type === 'file') await field.locator('input[type=file]').setInputFiles(value);
     else if (opt.type === 'checkbox') await field.locator('input').setChecked(!!value);
     else if (opt.type === 'radio') await field.locator(`input[value="${value}"]`).check();
     else if (opt.type === 'select') await field.locator('select').selectOption(String(value));
@@ -62,12 +62,12 @@ const failures = [];
 for (const f of fixtures) {
   const name = f.replace(/\.json$/, '');
   const fixture = JSON.parse(readFileSync(path.join(root, 'tests/fixtures', f), 'utf8'));
-  const expected = renderAll(fixture);
+  const expected = await renderAll(fixture);
   const page = await browser.newPage();
   const downloads = [];
   page.on('download', (d) => downloads.push(d));
   page.on('pageerror', (e) => failures.push(`${name}: page error ${e.message}`));
-  await page.goto(base);
+  await page.goto(base + '?test=1'); // shows the hidden "test": true catalog items
   await page.waitForSelector('.module');
   for (const m of catalog.modules) {
     const on = Object.prototype.hasOwnProperty.call(fixture.modules, m.id);
@@ -77,18 +77,22 @@ for (const f of fixtures) {
   await page.locator('#gen-uninstall').setChecked(fixture.generateUninstall !== false);
   await page.click('#generate-btn');
   await page.waitForSelector('#results:not([hidden])', { timeout: 15000 });
-  const want = expected.uninstall ? 2 : 1;
+  // A bundle build downloads one zip (which holds the .cmd files); otherwise the .cmd files.
+  const want = expected.zip ? 1 : expected.uninstall ? 2 : 1;
   for (let i = 0; i < 50 && downloads.length < want; i++) await page.waitForTimeout(100);
   const got = {};
   for (const d of downloads) {
     const buf = readFileSync(await d.path());
-    got[d.suggestedFilename().startsWith('Uninstall-') ? 'uninstall' : 'install'] = sha256(buf);
+    const fn = d.suggestedFilename();
+    got[fn.endsWith('.zip') ? 'zip' : fn.startsWith('Uninstall-') ? 'uninstall' : 'install'] = sha256(buf);
   }
+  if (downloads.length !== want) failures.push(`${name}: expected ${want} download(s), got ${downloads.length}`);
   const hashText = await page.textContent('#hash');
-  for (const kind of ['install', 'uninstall']) {
+  for (const kind of ['install', 'uninstall', 'zip']) {
     const exp = expected[kind] ? sha256(expected[kind]) : null;
-    if ((got[kind] || null) !== exp) failures.push(`${name} ${kind}: browser ${got[kind]} != node ${exp}`);
-    if (exp && exp !== golden[name][kind]) failures.push(`${name} ${kind}: node ${exp} != golden ${golden[name][kind]}`);
+    const downloaded = expected.zip ? kind === 'zip' : kind !== 'zip';
+    if (downloaded && (got[kind] || null) !== exp) failures.push(`${name} ${kind}: browser ${got[kind]} != node ${exp}`);
+    if (exp !== golden[name][kind]) failures.push(`${name} ${kind}: node ${exp} != golden ${golden[name][kind]}`);
     if (exp && !hashText.includes(exp)) failures.push(`${name} ${kind}: hash shown on the page does not match`);
   }
   console.log(`${failures.length ? 'check' : 'ok   '} ${name}`);

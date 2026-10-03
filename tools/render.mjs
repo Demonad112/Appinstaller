@@ -14,8 +14,10 @@
 //                                                                 // option "fooB64", "fooPath" is read
 //                                                                 // into fooB64
 //       "ublock-lite":      { "pinToolbar": true, "autoRestartChrome": false },
-//       "app-7zip":         {}      // curated apps (docs/apps/<id>.json) are modules named app-<id>
+//       "app-7zip":         {},     // curated apps (docs/apps/<id>.json) are modules named app-<id>
+//       "app-7zip-bundled": { "installer": "tests/assets/7z2603-x64.exe" }   // "file" option = a path
 //     },
+// A build with "file" options or secret values is written as one <name>.zip (see renderOutputs).
 //     "generateUninstall": true
 //   }
 // Keys starting with "_" (e.g. "_ci") are test-harness settings and are ignored here.
@@ -25,12 +27,12 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   expandCatalog,
-  fragmentIds,
-  renderInstall,
-  renderUninstall,
+  fragmentFiles,
+  joinFragment,
+  renderOutputs,
   selectedModules,
-  outputBaseName,
   iconKeys,
+  optionKeys,
   bytesToBase64,
 } from '../docs/render-core.js';
 
@@ -58,12 +60,12 @@ export function loadCatalog() {
 
 function loadFragments(catalog, ids, kind) {
   const out = {};
-  for (const f of fragmentIds(catalog, ids)) out[f] = read('modules', f, `${kind}.ps1`);
+  for (const [f, files] of Object.entries(fragmentFiles(catalog, ids, kind))) out[f] = joinFragment(files.map((p) => read(p)));
   return out;
 }
 
-// Resolves Node-only conveniences (<icon option key minus B64>Path -> <key> as base64) and
-// validates module ids.
+// Resolves Node-only conveniences (<icon option key minus B64>Path -> <key> as base64; a "file"
+// option's value is a path, read into bytes) and validates module ids.
 export function normalizeConfig(raw, catalog) {
   const known = new Set(catalog.modules.map((m) => m.id));
   const modules = {};
@@ -75,34 +77,49 @@ export function normalizeConfig(raw, catalog) {
       if (rest[pathKey]) rest[key] = bytesToBase64(readFileSync(rest[pathKey]));
       delete rest[pathKey];
     }
+    for (const key of optionKeys(catalog, id, 'file')) {
+      if (rest[key]) rest[key] = new Uint8Array(readFileSync(rest[key]));
+    }
     modules[id] = rest;
   }
   return { modules, generateUninstall: raw.generateUninstall !== false };
 }
 
-export function renderAll(rawConfig) {
+// { baseName, install, uninstall, zip } (see renderOutputs in docs/render-core.js).
+export async function renderAll(rawConfig) {
   const catalog = loadCatalog();
   const config = normalizeConfig(rawConfig, catalog);
   const ids = selectedModules(catalog, config);
   if (ids.length === 0) throw new Error('Config selects no modules');
-  return {
-    baseName: outputBaseName(catalog, config),
-    install: renderInstall({ core: read('core', 'installer-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(catalog, ids, 'install'), config }),
-    uninstall: config.generateUninstall
-      ? renderUninstall({ core: read('core', 'uninstall-core.ps1'), common: read('core', 'common.ps1'), catalog, fragments: loadFragments(catalog, ids, 'uninstall'), config })
-      : null,
-  };
+  return renderOutputs({
+    installCore: read('core', 'installer-core.ps1'),
+    uninstallCore: read('core', 'uninstall-core.ps1'),
+    common: read('core', 'common.ps1'),
+    catalog,
+    installFragments: loadFragments(catalog, ids, 'install'),
+    uninstallFragments: loadFragments(catalog, ids, 'uninstall'),
+    config,
+  });
 }
 
-function main() {
+async function main() {
   const [, , configPath, outDirArg] = process.argv;
   if (!configPath || !existsSync(configPath)) {
     console.error('Usage: node tools/render.mjs <config.json> [outDir]');
     process.exit(1);
   }
-  const { baseName, install, uninstall } = renderAll(JSON.parse(readFileSync(configPath, 'utf8')));
+  const { baseName, install, uninstall, zip } = await renderAll(JSON.parse(readFileSync(configPath, 'utf8')));
   const outDir = outDirArg || path.join(process.cwd(), 'out');
   mkdirSync(outDir, { recursive: true });
+
+  if (zip) {
+    // A bundle is only the zip; Run-Scenario.ps1 extracts it as a family member would.
+    const zipOut = path.join(outDir, `${baseName}.zip`);
+    writeFileSync(zipOut, zip);
+    console.log(`Wrote ${zipOut}`);
+    if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `BUNDLE_ZIP_PATH=${zipOut}\n`);
+    return;
+  }
 
   const installOut = path.join(outDir, `Install-${baseName}.cmd`);
   writeFileSync(installOut, install, { encoding: 'utf8' });
@@ -130,5 +147,5 @@ function main() {
 // (file:///D:/a/.../render.mjs), so main() would silently never run. Normalize both through
 // fileURLToPath/path.resolve instead, which handles the separator and drive-letter differences.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main();
+  main().catch((e) => { console.error(e.message); process.exit(1); });
 }

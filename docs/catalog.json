@@ -85,11 +85,30 @@
           "default": false
         }
       ]
+    },
+    {
+      "id": "test-secret",
+      "label": "Test: secret option (CI only)",
+      "description": "Hidden test item. Stores only a fingerprint of the secret, to prove secrets reach the computer through the download's files folder and never appear in the setup file or its log.",
+      "order": 90,
+      "scope": "user",
+      "requires": [],
+      "default": false,
+      "test": true,
+      "options": [
+        {
+          "key": "value",
+          "type": "secret",
+          "label": "Test secret",
+          "required": true
+        }
+      ]
     }
   ],
   "apps": [
     "7zip",
     "vlc",
-    "adobe-reader"
+    "adobe-reader",
+    "7zip-bundled"
   ]
 }

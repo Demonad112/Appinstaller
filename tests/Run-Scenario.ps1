@@ -26,6 +26,12 @@
 #   expectElevated  true, or a list of module ids that must finish in the elevated phase
 #   holdLock      the harness holds the Appinstaller run lock while the .cmd runs (use with
 #                 expectExit 1 and expectLog 'already in progress')
+#   corruptBundledFile  flips one byte of each bundled installer in the extracted zip, to prove a
+#                 tampered bundled installer is never run (use with expectExit 1)
+#   assertAbsent  strings (e.g. a canary secret) that must not appear in the rendered .cmd files
+#                 or in install.log / uninstall.log
+# A bundle build (render.mjs writes a .zip) is extracted with Expand-Archive and run from the
+# extracted folder, as a family member would.
 
 param(
     [Parameter(Mandatory = $true)][string]$Fixture,
@@ -125,7 +131,19 @@ function Remove-SeedForcelist {
     if (-not $script:SeedKeyExisted) { Remove-Item -Path $ForcelistKey -Force -ErrorAction SilentlyContinue }
 }
 
-function Get-InstallLogLines { 
+# Fails if any _ci.assertAbsent string appears in the rendered .cmd files or the logs.
+function Assert-Absent([string[]]$Paths) {
+    foreach ($s in @($(if ($ci -and $ci.assertAbsent) { $ci.assertAbsent }))) {
+        foreach ($p in $Paths) {
+            if ((Test-Path -LiteralPath $p) -and (Get-Content -LiteralPath $p -Raw).Contains([string]$s)) {
+                throw "A string that must stay secret appears in $p"
+            }
+        }
+        Write-Host "Not found in the .cmd files or logs (as expected): a secret value" -ForegroundColor Green
+    }
+}
+
+function Get-InstallLogLines {
     $p = Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log'
     if (Test-Path $p) { return @(Get-Content $p) } else { return @() }
 }
@@ -170,8 +188,19 @@ try {
     $rendered = node tools/render.mjs $Fixture $OutDir
     if ($LASTEXITCODE -ne 0) { throw "render.mjs failed" }
     $rendered | Write-Host
-    $installCmd = ($rendered | Where-Object { $_ -like 'Wrote *Install-*' } | Select-Object -First 1).Substring(6)
-    $uninstallCmd = ($rendered | Where-Object { $_ -like 'Wrote *Uninstall-*' } | Select-Object -First 1).Substring(6)
+    $zipLine = $rendered | Where-Object { $_ -like 'Wrote *.zip' } | Select-Object -First 1
+    if ($zipLine) {
+        $bundleRoot = Join-Path $OutDir 'bundle'
+        Remove-Item -LiteralPath $bundleRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Expand-Archive -LiteralPath $zipLine.Substring(6) -DestinationPath $bundleRoot
+        Get-ChildItem -LiteralPath $bundleRoot -Recurse -File | ForEach-Object { Write-Host "  bundle: $($_.FullName.Substring($bundleRoot.Length + 1)) ($($_.Length) bytes)" }
+        $installCmd = (Get-ChildItem -LiteralPath $bundleRoot -Recurse -Filter 'Install-*.cmd' | Select-Object -First 1).FullName
+        $uninstallCmd = (Get-ChildItem -LiteralPath $bundleRoot -Recurse -Filter 'Uninstall-*.cmd' | Select-Object -First 1).FullName
+    } else {
+        $installCmd = ($rendered | Where-Object { $_ -like 'Wrote *Install-*' } | Select-Object -First 1).Substring(6)
+        $uninstallCmd = ($rendered | Where-Object { $_ -like 'Wrote *Uninstall-*' } | Select-Object -First 1).Substring(6)
+    }
+    if (-not $installCmd -or -not $uninstallCmd) { throw 'Rendered Install/Uninstall .cmd not found' }
 
     # ---- Lint -------------------------------------------------------------------
     Step 'Lint (PSScriptAnalyzer)'
@@ -192,6 +221,18 @@ try {
         if ($bad -eq $json) { throw 'No sha256 pin found to corrupt' }
         $newB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bad))
         [IO.File]::WriteAllText((Resolve-Path $installCmd), $text.Replace($m.Groups[1].Value, $newB64), (New-Object Text.UTF8Encoding($false)))
+    }
+
+    if ($ci -and $ci.corruptBundledFile) {
+        Step 'Corrupt the bundled installer(s) (tamper test)'
+        $files = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Parent $installCmd) 'files') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'secrets.json' })
+        if ($files.Count -eq 0) { throw 'No bundled file found to corrupt' }
+        foreach ($f in $files) {
+            $bytes = [IO.File]::ReadAllBytes($f.FullName)
+            $bytes[$bytes.Length - 1] = $bytes[$bytes.Length - 1] -bxor 0xFF
+            [IO.File]::WriteAllBytes($f.FullName, $bytes)
+            Write-Host "Flipped the last byte of $($f.Name)"
+        }
     }
 
     # ---- Install / idempotency / uninstall -------------------------------------
@@ -225,6 +266,7 @@ try {
     Invoke-Verify 'after 3rd install (idempotency)' -ExpectedCount 1
     Invoke-Cmd 'Uninstall' $uninstallCmd
     Invoke-Verify 'after uninstall' -ExpectAbsent
+    Assert-Absent @($installCmd, $uninstallCmd, (Join-Path $env:LOCALAPPDATA 'Appinstaller\install.log'), (Join-Path $env:LOCALAPPDATA 'Appinstaller\uninstall.log'))
 
     Show-Logs
     Write-Host "`nScenario passed: $Fixture" -ForegroundColor Green

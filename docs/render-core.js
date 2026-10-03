@@ -48,12 +48,14 @@ export function outputBaseName(catalog, config) {
   return 'Setup';
 }
 
-// Option keys of type "icon" for a module (their payload is install-only and is stripped from
-// the uninstaller's config).
-export function iconKeys(catalog, id) {
+// Option keys of a given type for a module. "icon" payloads are install-only (stripped from the
+// uninstaller's config); "file" bytes and "secret" values never enter any config: they go into
+// the bundle's files/ folder (see renderOutputs).
+export function optionKeys(catalog, id, type) {
   const m = catalog.modules.find((x) => x.id === id);
-  return ((m && m.options) || []).filter((o) => o.type === 'icon').map((o) => o.key);
+  return ((m && m.options) || []).filter((o) => o.type === type).map((o) => o.key);
 }
+export const iconKeys = (catalog, id) => optionKeys(catalog, id, 'icon');
 
 // Curated apps are data: catalog.json lists app ids and docs/apps/<id>.json defines each one.
 // expandCatalog() turns them into ordinary catalog modules `app-<id>` that share ONE fragment
@@ -65,6 +67,11 @@ export function expandCatalog(catalog, appDefs) {
   for (const id of catalog.apps || []) {
     const a = appDefs && appDefs[id];
     if (!a) throw new Error(`Missing app definition '${id}' (docs/apps/${id}.json)`);
+    // A bundled app's installer is picked when the bundle is generated and shipped in files/.
+    const options = a.source && a.source.type === 'bundled'
+      ? [{ key: 'installer', type: 'file', label: `Installer file (${a.source.file})`, required: true, fileName: a.source.file,
+          hint: 'Checked against the pinned fingerprint before it goes into the download.' }]
+      : [];
     modules.push({
       id: `app-${id}`,
       label: a.label,
@@ -73,25 +80,28 @@ export function expandCatalog(catalog, appDefs) {
       scope: a.scope,
       requires: a.requires || [],
       default: false,
-      options: [],
+      options,
       fragment: 'app',
       app: a,
+      ...(a.test ? { test: true } : {}),
     });
   }
   return { ...catalog, modules };
 }
 
-// The fragment file ids (docs/modules/<fragmentId>/<kind>.ps1) needed to render these modules:
-// a module's own id, or the shared fragment it names (listed once).
-export function fragmentIds(catalog, ids) {
-  const out = [];
+// The files to load per fragment, as { [fragmentId]: [paths under docs/] }: a plain module's own
+// modules/<id>/<kind>.ps1; a shared fragment's modules/<f>/common.ps1 (helpers both kinds use)
+// followed by modules/<f>/<kind>.ps1. Callers load and join them with joinFragment().
+export function fragmentFiles(catalog, ids, kind) {
+  const out = {};
   for (const id of ids) {
     const m = catalog.modules.find((x) => x.id === id);
     const f = (m && m.fragment) || id;
-    if (!out.includes(f)) out.push(f);
+    if (!out[f]) out[f] = m && m.fragment ? [`modules/${f}/common.ps1`, `modules/${f}/${kind}.ps1`] : [`modules/${f}/${kind}.ps1`];
   }
   return out;
 }
+export const joinFragment = (texts) => texts.map((t) => t.replace(/\s+$/, '')).join('\n\n');
 
 // Selected module ids, in catalog order (which is also execution order on the target).
 export function selectedModules(catalog, config) {
@@ -140,30 +150,50 @@ function assemble(coreText, commonText, catalog, ids, fragments, runtimeConfig) 
     .split('__MODULES__').join(body);
 }
 
-// The runtime config the core decodes: per-module options plus each module's scope (the catalog
-// is the single source of truth for scope; the core uses it to pick the user or machine phase).
-function runtimeConfig(catalog, ids, modules) {
-  const scopes = {};
-  for (const id of ids) scopes[id] = catalog.modules.find((m) => m.id === id).scope;
-  return { modules, scopes };
+const hasValue = (v) => v !== undefined && v !== null && v !== '';
+
+// The secret values chosen per module: { [moduleId]: { [key]: value } } (only non-empty ones).
+function secretValues(catalog, ids, config) {
+  const out = {};
+  for (const id of ids) {
+    for (const k of optionKeys(catalog, id, 'secret')) {
+      const v = config.modules[id] && config.modules[id][k];
+      if (hasValue(v)) (out[id] = out[id] || {})[k] = String(v);
+    }
+  }
+  return out;
 }
 
-// Per-module runtime options; an app module also carries its definition (not user input).
+// The runtime config the core decodes: per-module options plus each module's scope (the catalog
+// is the single source of truth for scope; the core uses it to pick the user or machine phase).
+// With secrets, "secrets" lists their key NAMES per module; the values live in files/secrets.json.
+function runtimeConfig(catalog, ids, modules, config) {
+  const scopes = {};
+  for (const id of ids) scopes[id] = catalog.modules.find((m) => m.id === id).scope;
+  const secrets = {};
+  for (const [id, kv] of Object.entries(secretValues(catalog, ids, config))) secrets[id] = Object.keys(kv);
+  return Object.keys(secrets).length ? { modules, scopes, secrets } : { modules, scopes };
+}
+
+// Per-module runtime options without file bytes or secret values; an app module also carries its
+// definition (not user input).
 function moduleRuntime(catalog, id, opts) {
+  const rest = { ...(opts || {}) };
+  for (const k of [...optionKeys(catalog, id, 'file'), ...optionKeys(catalog, id, 'secret')]) delete rest[k];
   const m = catalog.modules.find((x) => x.id === id);
-  if (!m || !m.app) return opts;
+  if (!m || !m.app) return rest;
   const { id: appId, label, scope, source, detect, uninstall } = m.app;
-  return { ...opts, app: { id: appId, label, scope, source, detect, uninstall } };
+  return { ...rest, app: { id: appId, label, scope, source, detect, uninstall } };
 }
 
 // catalog: the EXPANDED catalog (see expandCatalog).
-// fragments: { [fragmentId]: install.ps1 text } per fragmentIds(catalog, selected ids).
+// fragments: { [fragmentId]: text } (see fragmentFiles / joinFragment), kind-specific.
 // common: docs/core/common.ps1 text.
 export function renderInstall({ core, common, catalog, fragments, config }) {
   const ids = selectedModules(catalog, config);
   const modules = {};
   for (const id of ids) modules[id] = moduleRuntime(catalog, id, config.modules[id]);
-  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules)));
+  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules, config)));
 }
 
 // Same as renderInstall, minus the icon payloads the uninstaller never needs.
@@ -175,5 +205,100 @@ export function renderUninstall({ core, common, catalog, fragments, config }) {
     for (const k of iconKeys(catalog, id)) delete rest[k];
     modules[id] = moduleRuntime(catalog, id, rest);
   }
-  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules)));
+  return buildPolyglot(assemble(core, common, catalog, ids, fragments, runtimeConfig(catalog, ids, modules, config)));
+}
+
+// ---- Bundle (zip) output ---------------------------------------------------------------------
+// Deterministic STORE-only zip (no compression, fixed 1980-01-01 timestamps, entries in the given
+// order, UTF-8 names), so the browser and Node produce identical bytes.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+export function zipStore(entries) {
+  const enc = new TextEncoder();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const { name, bytes } of entries) {
+    const n = enc.encode(name);
+    const crc = crc32(bytes);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+    h.setUint16(12, 0x21, true); h.setUint32(14, crc, true);
+    h.setUint32(18, bytes.length, true); h.setUint32(22, bytes.length, true); h.setUint16(26, n.length, true);
+    parts.push(new Uint8Array(h.buffer), n, bytes);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(14, 0x21, true); c.setUint32(16, crc, true);
+    c.setUint32(20, bytes.length, true); c.setUint32(24, bytes.length, true); c.setUint16(28, n.length, true);
+    c.setUint32(42, offset, true);
+    central.push(new Uint8Array(c.buffer), n);
+    offset += 30 + n.length + bytes.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, entries.length, true); e.setUint16(10, entries.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+  const all = [...parts, ...central, new Uint8Array(e.buffer)];
+  const out = new Uint8Array(all.reduce((s, p) => s + p.length, 0));
+  let at = 0;
+  for (const p of all) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+export async function sha256Hex(bytes) {
+  const d = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Everything one build produces. Builds with no file payload are just the two .cmd texts
+// (zip = null). A build with "file" options or secret values is ONE zip:
+//   <base>/Install-<base>.cmd, <base>/Uninstall-<base>.cmd, <base>/files/<fileName>, <base>/files/secrets.json
+// so secrets never sit in a .cmd. A file whose app pins a SHA-256 must match it (fail early).
+// config.modules[id][fileKey] is a Uint8Array; secret values are strings.
+export async function renderOutputs({ installCore, uninstallCore, common, catalog, installFragments, uninstallFragments, config }) {
+  const ids = selectedModules(catalog, config);
+  const baseName = outputBaseName(catalog, config);
+  const payload = [];
+  for (const id of ids) {
+    const m = catalog.modules.find((x) => x.id === id);
+    for (const o of (m.options || []).filter((x) => x.type === 'file')) {
+      const v = config.modules[id] && config.modules[id][o.key];
+      if (!hasValue(v)) {
+        if (o.required) throw new Error(`Please choose "${o.label}" for ${m.label}.`);
+        continue;
+      }
+      if (!(v instanceof Uint8Array)) throw new Error(`${id}.${o.key}: file content must be bytes`);
+      const pin = m.app && m.app.source && m.app.source.sha256;
+      if (pin && (await sha256Hex(v)) !== pin) {
+        throw new Error(`The file chosen for "${o.label}" (${m.label}) is not the expected installer: its SHA-256 fingerprint does not match.`);
+      }
+      payload.push({ name: `files/${o.fileName}`, bytes: v });
+    }
+  }
+  const secrets = secretValues(catalog, ids, config);
+  if (Object.keys(secrets).length) payload.push({ name: 'files/secrets.json', bytes: new TextEncoder().encode(JSON.stringify(secrets)) });
+
+  const install = renderInstall({ core: installCore, common, catalog, fragments: installFragments, config });
+  const uninstall = config.generateUninstall
+    ? renderUninstall({ core: uninstallCore, common, catalog, fragments: uninstallFragments, config })
+    : null;
+  if (payload.length === 0) return { baseName, install, uninstall, zip: null };
+  const enc = new TextEncoder();
+  const entries = [{ name: `${baseName}/Install-${baseName}.cmd`, bytes: enc.encode(install) }];
+  if (uninstall) entries.push({ name: `${baseName}/Uninstall-${baseName}.cmd`, bytes: enc.encode(uninstall) });
+  for (const p of payload) entries.push({ name: `${baseName}/${p.name}`, bytes: p.bytes });
+  return { baseName, install, uninstall, zip: zipStore(entries) };
 }

@@ -1,54 +1,82 @@
 {
+  "app-7zip-bundled": {
+    "install": "3ea767b304aa4cec926b8b57d6d7f7ae885ca084ade846cb934dbe54edff92f8",
+    "uninstall": "2a300cf1b9d8dd4cb6a53ba58f18b02425dc25cac5b186693dadeba404d8bd04",
+    "zip": "28ced2da80ba83f1b43beb5e27bb222a6821a07869212ae74c4bb1a65db518c2"
+  },
   "app-7zip-present": {
-    "install": "1a73b8f175a753f59226d1f449f2f458c86c3f9901d92357498925d6049cfa9d",
-    "uninstall": "1191a7b1680978dced6dae6f7199f424393eb1dc11386a5bfd05619d90200b1f"
+    "install": "d340d515d87a7e8e5c8434c8f33a43140ff199fd4bbceaadce317524641b49c5",
+    "uninstall": "3604828c3e21ad82b608392eaf0b49c7448f4095b8d3963be6c1d21c5f81843f",
+    "zip": null
   },
   "app-7zip": {
-    "install": "1a73b8f175a753f59226d1f449f2f458c86c3f9901d92357498925d6049cfa9d",
-    "uninstall": "1191a7b1680978dced6dae6f7199f424393eb1dc11386a5bfd05619d90200b1f"
+    "install": "d340d515d87a7e8e5c8434c8f33a43140ff199fd4bbceaadce317524641b49c5",
+    "uninstall": "3604828c3e21ad82b608392eaf0b49c7448f4095b8d3963be6c1d21c5f81843f",
+    "zip": null
   },
   "app-adobe-reader": {
-    "install": "49a6d63f1b3132bb282680c9ffc634d5953d4de057dbcd960efc669e485c1a8b",
-    "uninstall": "238570bf84e60a7ae1da10912a79ad9083d8c4ba500b0d05f7fed8a9b19107a7"
+    "install": "e35d91111dde09a4e6b2c6b73b345cddc77dccc00681d67e339bda7429acbe2d",
+    "uninstall": "292fd2a8a3d19d72ec45daaa7a189599d854b3634104b1025160107bd14e0dd7",
+    "zip": null
   },
   "app-blocked": {
-    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
-    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+    "install": "657ab1d3939c20d7872976d963dfc72d5987702f7e9d2610884583f1e83b5149",
+    "uninstall": "cff6157a4d12e7bd37005f7bc781d75d3de91333ea032734ecc6d8b6dc9caa74",
+    "zip": null
+  },
+  "app-bundled-tampered": {
+    "install": "3ea767b304aa4cec926b8b57d6d7f7ae885ca084ade846cb934dbe54edff92f8",
+    "uninstall": "2a300cf1b9d8dd4cb6a53ba58f18b02425dc25cac5b186693dadeba404d8bd04",
+    "zip": "28ced2da80ba83f1b43beb5e27bb222a6821a07869212ae74c4bb1a65db518c2"
   },
   "app-tampered": {
-    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
-    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+    "install": "657ab1d3939c20d7872976d963dfc72d5987702f7e9d2610884583f1e83b5149",
+    "uninstall": "cff6157a4d12e7bd37005f7bc781d75d3de91333ea032734ecc6d8b6dc9caa74",
+    "zip": null
   },
   "app-vlc": {
-    "install": "f428da41ffe41227e457540a240e8a456f5142dfea61b1f44348b5cc927ba515",
-    "uninstall": "a634925b6663d1c742b31bcbf83200702a693689fec8f68cd80c719b37af8617"
+    "install": "657ab1d3939c20d7872976d963dfc72d5987702f7e9d2610884583f1e83b5149",
+    "uninstall": "cff6157a4d12e7bd37005f7bc781d75d3de91333ea032734ecc6d8b6dc9caa74",
+    "zip": null
   },
   "chrome-blocked": {
-    "install": "e3563f7144a90abffca71a523dc18ed3dd4d3a8514015c5cc91c229655e0c03c",
-    "uninstall": "55eaafacb9b2000d870071e07e2de69058fe5f922212c069d4f830fae816cd00"
+    "install": "19f35cc412ecb2f2a4ce9dd11e57506fdffcdb084a3743e1a4d60b76324f70d5",
+    "uninstall": "3a89bf722633ac4abf41bb4de659928c0684280c1f0f50d789d8d29cde9bfab7",
+    "zip": null
   },
   "chrome-fresh": {
-    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
-    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
+    "install": "ace8ba0544dee93f320369030c70d84568e6812fac013df47fb70f8f1280797b",
+    "uninstall": "440acc9d1ebde27d1430191db78c0e0082c2075883001cd16ae16ff0ae28c07f",
+    "zip": null
   },
   "chrome-present": {
-    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
-    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
+    "install": "ace8ba0544dee93f320369030c70d84568e6812fac013df47fb70f8f1280797b",
+    "uninstall": "440acc9d1ebde27d1430191db78c0e0082c2075883001cd16ae16ff0ae28c07f",
+    "zip": null
   },
   "default-icon": {
-    "install": "71a3d2eb86fbe163e96238eb062cd1c54b4ee6aa50944c3b4eff7a7fe31cb926",
-    "uninstall": "888bf9c373fbe85193320fa66ddfe6b80d0b0c7b9ac0ca0692a1f070c142591e"
+    "install": "bea50b79e7cb6a49d6aa9b43493cfd7df5a991030152c15ad04b331e9cbbeb8a",
+    "uninstall": "0414b1cdeb63e9f22d9dd006fc390a56d1f1f1c1cdc1ea9590063d9e3b53d740",
+    "zip": null
   },
   "default": {
-    "install": "fc103e193b2fc3b35405f6c50b86907b57f546fa294e6acf3e1e18c9a4ecc28f",
-    "uninstall": "5c8bf5e898c9b089ae591b0da17c67692abc3233e8e6c0df107cea83e059a43e"
+    "install": "137fb77e57f08000b4c298896b94c3b8a22b16a858219f8f93abbc010521c4e0",
+    "uninstall": "d063e57650c4b54cbe136f23345a20cf244bf0b3af0a10faf125241f1a0edbe1",
+    "zip": null
   },
   "machine-scope": {
-    "install": "ec7223cdafbdd21f95e01ee1027add2fc8026b99a06f81f379a390b9b45e16f7",
-    "uninstall": "40d8829ea960ed6d089367e1137ce3d3a5d2c205e67aff6f818366309615a128"
+    "install": "ace8ba0544dee93f320369030c70d84568e6812fac013df47fb70f8f1280797b",
+    "uninstall": "440acc9d1ebde27d1430191db78c0e0082c2075883001cd16ae16ff0ae28c07f",
+    "zip": null
   },
   "run-lock": {
-    "install": "47b4d6ce445178cfc32d1192c918a396984fd685ae546a7d30f9b8fcb58a055d",
-    "uninstall": "acebd646d2252509de1904508f4f995e94d669e7a44602e2c093ae1510b0f521"
+    "install": "bed8b662f320e854e1ba247b5e83d7318938d79bc4344f3c2847a2780c0cde07",
+    "uninstall": "c7f00e54cee1c32b9a71d2b10a062b85d8a1bf686f2513853865c785ee6453ae",
+    "zip": null
+  },
+  "test-secret": {
+    "install": "8c21954112aea0ae5fff2e3ab26bd184a42e4d5d6b1ec3da361b2aee12036eb7",
+    "uninstall": "3269bf64b67393bcf6ea2bae4ad135c363baa0c7e17c3f167a3c81ae7dcb4233",
+    "zip": "a5e3d46ee2f3e290340e83d18c25e7ab3485be675109a6f5dd7052860bc4254e"
   }
 }

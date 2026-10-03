@@ -5,13 +5,13 @@
 
 import {
   expandCatalog,
-  fragmentIds,
-  renderInstall,
-  renderUninstall,
+  fragmentFiles,
+  joinFragment,
+  renderOutputs,
   selectedModules,
-  outputBaseName,
   sanitizeFilename,
   bytesToBase64,
+  sha256Hex,
 } from './render-core.js';
 
 const form = document.getElementById('config-form');
@@ -25,8 +25,9 @@ const errorNotice = document.getElementById('error-notice');
 
 // ---- Data-driven option fields ----------------------------------------------
 // Every module's form comes from its "options" list in docs/catalog.json (types: text, url,
-// select, radio, checkbox, icon, secret, multiselect). collectOptions() returns exactly what
-// docs/modules/<id>/install.ps1 receives as $Cfg, or throws a message for the user.
+// select, radio, checkbox, icon, secret, multiselect, file). collectOptions() returns the module's
+// options (file bytes and secret values included; render-core moves those into the download's
+// files/ folder, never into a .cmd), or throws a message for the user.
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
@@ -55,7 +56,18 @@ function buildField(moduleId, opt) {
         value: fromUrl || opt.default || '',
       });
       if (opt.maxLength) input.maxLength = opt.maxLength;
+      if (opt.type === 'secret') {
+        input.value = '';
+        input.autocomplete = 'off';
+      }
       wrap.append(labelWithHint(opt, id), input);
+      if (opt.type === 'secret') {
+        wrap.append(el('p', { className: 'hint', textContent: 'Kept out of the setup files: it goes into a separate file inside the downloaded zip. Don\'t share that zip, and delete it after installing.' }));
+      }
+      break;
+    }
+    case 'file': {
+      wrap.append(labelWithHint(opt, id), el('input', { id, type: 'file' }));
       break;
     }
     case 'select': {
@@ -114,9 +126,25 @@ async function collectOptions(m, card) {
     const field = card.querySelector(`.field[data-key="${opt.key}"]`);
     let value;
     switch (opt.type) {
-      case 'text':
-      case 'url':
       case 'secret': {
+        value = field.querySelector('input').value; // not trimmed: spaces can be part of a password
+        if (!value) {
+          if (opt.required) throw new Error(`Please fill in "${opt.label}".`);
+          continue;
+        }
+        break;
+      }
+      case 'file': {
+        const file = field.querySelector('input').files[0];
+        if (!file) {
+          if (opt.required) throw new Error(`Please choose "${opt.label}" for ${m.label}.`);
+          continue;
+        }
+        value = new Uint8Array(await file.arrayBuffer());
+        break;
+      }
+      case 'text':
+      case 'url': {
         value = field.querySelector('input').value.trim();
         if (opt.sanitize === 'filename') value = sanitizeFilename(value);
         if (!value && opt.default) value = opt.default;
@@ -182,16 +210,18 @@ cachedText('./core/uninstall-core.ps1');
 cachedText('./core/common.ps1');
 
 async function loadFragments(catalog, ids, kind) {
-  const files = fragmentIds(catalog, ids);
-  const texts = await Promise.all(files.map((f) => cachedText(`./modules/${f}/${kind}.ps1`)));
-  return Object.fromEntries(files.map((f, i) => [f, texts[i]]));
+  const entries = Object.entries(fragmentFiles(catalog, ids, kind));
+  const texts = await Promise.all(entries.map(([, files]) => Promise.all(files.map((p) => cachedText(`./${p}`)))));
+  return Object.fromEntries(entries.map(([f], i) => [f, joinFragment(texts[i])]));
 }
 
 // ---- Checklist UI -----------------------------------------------------------
 const params = new URLSearchParams(location.search);
 
 function renderChecklist(catalog) {
-  const ordered = [...catalog.modules].sort((a, b) => a.order - b.order);
+  // "test": true items exist for CI only; they show with ?test=1 (tests/browser.mjs uses it).
+  const showTest = params.get('test') === '1';
+  const ordered = [...catalog.modules].filter((m) => showTest || !m.test).sort((a, b) => a.order - b.order);
   for (const m of ordered) {
     const card = document.createElement('section');
     card.className = 'module';
@@ -260,15 +290,10 @@ catalogPromise
   .catch((err) => showError('Could not load the list of setup items: ' + err.message));
 
 // ---- Output -----------------------------------------------------------------
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+const hashOf = (data) => sha256Hex(typeof data === 'string' ? new TextEncoder().encode(data) : data);
 
-function triggerDownload(filename, text) {
-  const blob = new Blob([text], { type: 'text/plain' });
+function triggerDownload(filename, data) {
+  const blob = new Blob([data], { type: typeof data === 'string' ? 'text/plain' : 'application/zip' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -311,32 +336,40 @@ form.addEventListener('submit', async (event) => {
     }
 
     const ids = selectedModules(catalog, config);
-    const [installCore, uninstallCore, common, installFrags] = await Promise.all([
+    const [installCore, uninstallCore, common, installFragments, uninstallFragments] = await Promise.all([
       cachedText('./core/installer-core.ps1'),
       cachedText('./core/uninstall-core.ps1'),
       cachedText('./core/common.ps1'),
       loadFragments(catalog, ids, 'install'),
+      loadFragments(catalog, ids, 'uninstall'),
     ]);
-    const base = outputBaseName(catalog, config);
-    const installCmd = renderInstall({ core: installCore, common, catalog, fragments: installFrags, config });
+    const { baseName: base, install, uninstall, zip } = await renderOutputs({
+      installCore, uninstallCore, common, catalog, installFragments, uninstallFragments, config,
+    });
 
     downloadsDiv.innerHTML = '';
     const installName = `Install-${base}.cmd`;
-    triggerDownload(installName, installCmd);
-    addRedownloadButton(installName, installCmd);
-    const hashLines = [`${installName}  sha256:${await sha256Hex(installCmd)}`];
-
-    if (config.generateUninstall) {
-      const uninstallFrags = await loadFragments(catalog, ids, 'uninstall');
-      const uninstallCmd = renderUninstall({ core: uninstallCore, common, catalog, fragments: uninstallFrags, config });
-      const uninstallName = `Uninstall-${base}.cmd`;
-      triggerDownload(uninstallName, uninstallCmd);
-      addRedownloadButton(uninstallName, uninstallCmd);
-      hashLines.push(`${uninstallName}  sha256:${await sha256Hex(uninstallCmd)}`);
+    const uninstallName = `Uninstall-${base}.cmd`;
+    const hashLines = [];
+    if (zip) {
+      // Files or secrets go with this setup: one zip, to be extracted before running.
+      const zipName = `${base}.zip`;
+      triggerDownload(zipName, zip);
+      addRedownloadButton(zipName, zip);
+      hashLines.push(`${zipName}  sha256:${await hashOf(zip)}  (extract it, then run ${installName})`);
+    } else {
+      triggerDownload(installName, install);
+      addRedownloadButton(installName, install);
+      if (uninstall) {
+        triggerDownload(uninstallName, uninstall);
+        addRedownloadButton(uninstallName, uninstall);
+      }
     }
+    hashLines.push(`${installName}  sha256:${await hashOf(install)}`);
+    if (uninstall) hashLines.push(`${uninstallName}  sha256:${await hashOf(uninstall)}`);
 
     hashDiv.textContent = hashLines.join('\n');
-    auditPre.textContent = installCmd.slice(installCmd.indexOf('\n') + 1);
+    auditPre.textContent = install.slice(install.indexOf('\n') + 1);
     resultsPanel.hidden = false;
   } catch (err) {
     console.error(err);

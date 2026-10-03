@@ -40,8 +40,20 @@ try {
     }
 } catch {}
 
+# The folder the .cmd runs from; in a bundle (zip) its files\ folder sits next to the .cmd.
+$BundleDir = if ($SELF) { Split-Path -Parent $SELF } else { $null }
+
+# Secret values loaded by Import-AppiSecrets. Every log line and popup is masked with them.
+$script:AppiSecretValues = @()
+function Protect-AppiText {
+    param([string]$Text)
+    foreach ($s in $script:AppiSecretValues) { if ($s) { $Text = $Text.Replace([string]$s, '********') } }
+    return $Text
+}
+
 function Write-Log {
     param([string]$Message)
+    $Message = Protect-AppiText $Message
     $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
     try { Add-Content -Path $LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
 }
@@ -63,6 +75,7 @@ function Get-AppiArg {
 
 function Show-Result {
     param([string]$Message, [bool]$IsError = $false)
+    $Message = Protect-AppiText $Message
     Write-Log $Message
     try {
         $wsh = New-Object -ComObject WScript.Shell
@@ -255,12 +268,36 @@ function Start-MachinePhase {
     return $out
 }
 
+# Secrets never sit in the .cmd: the config only lists their key names ($Config.secrets =
+# { <moduleId>: [keys] }) and the values come from files\secrets.json next to the .cmd. They are
+# merged into $Config.modules.<id>.<key> (so modules read them like any option) and registered
+# for masking. Missing file or value = throw (fail closed). Each phase reads the file itself.
+function Import-AppiSecrets {
+    param($Config)
+    if (-not $Config.secrets) { return }
+    $p = if ($BundleDir) { Join-Path (Join-Path $BundleDir 'files') 'secrets.json' } else { $null }
+    if (-not $p -or -not (Test-Path -LiteralPath $p)) {
+        throw "This setup needs its files\secrets.json, which was not found next to it. Extract the whole zip first (right-click it, Extract All), then run the setup from the extracted folder."
+    }
+    $values = Get-Content -LiteralPath $p -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($prop in $Config.secrets.PSObject.Properties) {
+        foreach ($key in @($prop.Value)) {
+            $v = $values.($prop.Name).$key
+            if (-not $v) { throw "files\secrets.json has no value for $($prop.Name).$key." }
+            $script:AppiSecretValues += [string]$v
+            $Config.modules.($prop.Name) | Add-Member -NotePropertyName $key -NotePropertyValue ([string]$v) -Force
+        }
+    }
+    Write-Log "Loaded $(@($script:AppiSecretValues).Count) secret value(s) from $p."
+}
+
 # Entry point used by both cores. $Noun is 'Install' or 'Uninstall'. Returns the exit code.
 #   -Action     { param($m, $cfg, $ctx) ... } runs one module and returns its result lines
 #   -NewContext { ... } returns the shared $ctx hashtable (built fresh in each phase)
 function Invoke-Appinstaller {
     param($Modules, $Config, [string]$Noun, [scriptblock]$Action, [scriptblock]$NewContext)
 
+    Import-AppiSecrets $Config
     if ((Get-AppiArg 'phase') -eq 'machine') {
         return (Invoke-MachinePhase -Modules $Modules -Config $Config -Action $Action -NewContext $NewContext)
     }
