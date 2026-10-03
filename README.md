@@ -8,6 +8,7 @@ with zero required interaction, sets up whichever of these **modules** you tick:
 | `chrome` | Installs Google Chrome for the current user if no Chrome exists (Google's signed per-user installer). No-op if Chrome is present; left installed on uninstall. | No |
 | `desktop-shortcut` | Desktop icon that opens one website in a Chrome app window (or the default browser). | No |
 | `ublock-lite` | Force-installs **uBlock Origin Lite** into Chrome via enterprise policy, so it can't be accidentally disabled or removed. | Only if a machine-wide Chrome policy already exists |
+| `app-7zip`, `app-vlc`, `app-adobe-reader` | Curated apps defined as data in `docs/apps/*.json` (see [Adding an app](#adding-an-app)). Skipped if already installed; uninstall only removes what this setup installed. | One UAC prompt, only if something needs installing |
 
 **Live site:** enable GitHub Pages once — see [Enabling Pages](#enabling-pages) — then use it
 at `https://<owner>.github.io/<repo>/`.
@@ -111,10 +112,15 @@ docs/                       GitHub Pages root
   core/installer-core.ps1   config decode + install entry point (splices common.ps1)
   core/uninstall-core.ps1   same, for rollback
   modules/<id>/install.ps1, uninstall.ps1   one folder per module
+  modules/app/install.ps1, uninstall.ps1    shared fragment for every curated app
+  apps/<id>.json            one curated app: source, detect, uninstall (listed in catalog.json "apps")
 tools/render.mjs            Node CLI around render-core.js (CI + local testing)
+tools/Probe-Winget.ps1      admission probe for a candidate app (run via probe-winget.yml)
 tests/
   fixtures/<scenario>.json  one CI scenario each (which modules + options)
   modules/<id>.Verify.ps1   per-module assertions (installed / idempotent / removed)
+  modules/app.Verify.ps1    assertions for every curated app (-AppId)
+  Set-App.ps1               CI setup: put a curated app in a known state (absent / present)
   Run-Scenario.ps1          render -> lint -> install x3 -> verify -> uninstall -> verify
   check-catalog.mjs         fast cross-platform consistency + schema checks + golden hashes
   golden.json               sha256 of each fixture's rendered .cmd (regenerate on purpose)
@@ -159,6 +165,47 @@ shows up on the page.
 6. Add `tests/fixtures/<scenario>.json` and list the scenario in `validate.yml`'s matrix.
    `node tests/check-catalog.mjs` enforces steps 1–6.
 7. Push, and get the whole matrix green.
+
+## Adding an app
+
+Apps are data, not code: one JSON file per app, no PowerShell to write. Each file becomes a
+catalog module `app-<id>` (off by default) that shares `docs/modules/app/{install,uninstall}.ps1`.
+
+1. **Probe it on real Windows first.** Run the *Probe winget candidates* workflow (Actions tab,
+   *Run workflow*) with the winget ID, a DisplayName regex and optionally a vendor URL. It prints
+   the installer type, whether `--scope user` works, a timed install -> detect -> uninstall cycle
+   and, for a URL, its SHA-256 and Authenticode signer. Reject anything not provably silent.
+2. Write `docs/apps/<id>.json` and add `<id>` to `"apps"` in `docs/catalog.json`:
+
+   ```
+   id, label, description, order (>= 100), scope: "user" | "machine", requires: [module ids]
+   source   {type:"winget", id:"Publisher.Package"}
+            {type:"url", url:"https://...", sha256?:hex64, signer?:regex, args:[...], timeoutSec?}
+   detect   [ {type:"file", path:"%ProgramFiles%\..."} | {type:"arp", displayName:regex, publisher?:regex} ]
+   uninstall {type:"winget"} (winget source only) | {type:"exe", path:"%ProgramFiles%\...", args:[...]}
+   ```
+
+   winget installs always run with `--source winget --exact --silent`; the package ID is the pin
+   and winget verifies the manifest hash. A URL source must pin `sha256` and/or `signer` and is
+   verified before it is run. Detect with files when possible: winget can leave stub registry
+   entries behind (VLC), which would make a registry check say "installed" after removal.
+3. Add `tests/fixtures/app-<id>.json` (`_ci.removeApps` removes an app the runner image ships,
+   `_ci.expectApp` is `fresh` or `existing`, `_ci.expectElevated` lists modules that must finish
+   in the elevated child) and list it in `validate.yml`'s matrix. `check-catalog` validates the
+   schema and these files; regenerate goldens with `--update-goldens` and review the diff.
+
+**Behavior.** An app that is already installed is left alone and not recorded; uninstall only
+removes apps recorded in `apps-state.json` (`%ProgramData%\Appinstaller` for machine scope,
+`%LOCALAPPDATA%\Appinstaller` for user scope). Machine-scope apps share the one elevated child, and
+UAC appears only if something actually needs installing.
+
+**Known tradeoffs.**
+- URL sources are version-pinned (VLC pins 3.0.23 by SHA-256): bump `url` and `sha256` together
+  when the vendor releases; nothing flags a stale pin yet.
+- winget must exist on the target PC (Windows 10 without *App Installer* may lack it); without it
+  a winget app fails closed with a message and a non-zero exit.
+- The verified installer sits in `%TEMP%` until launched (same trust model as the elevated child
+  re-running the on-disk `.cmd`).
 
 ## Enabling Pages
 

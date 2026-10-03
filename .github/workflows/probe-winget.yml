@@ -32,7 +32,7 @@ jobs:
       matrix:
         include:
           - { id: '7zip.7zip', arp: '^7-Zip', url: '' }
-          - { id: 'VideoLAN.VLC', arp: '^VLC media player', url: 'https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.exe' }
+          - { id: 'VideoLAN.VLC', arp: '^VLC media player', url: 'https://download.videolan.org/pub/videolan/vlc/3.0.23/win64/vlc-3.0.23-win64.exe' }
           - { id: 'Adobe.Acrobat.Reader.64-bit', arp: '^Adobe (Acrobat|Reader)', url: '' }
     steps:
       - uses: actions/checkout@v5
