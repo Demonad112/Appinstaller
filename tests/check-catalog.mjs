@@ -114,7 +114,20 @@ function checkApp(id, a) {
     if (s.signer !== undefined) checkRegex(s.signer, `${at} source.signer`);
     checkArgs(s.args, `${at} source.args (silent switches)`);
     if (s.timeoutSec !== undefined && !(Number.isInteger(s.timeoutSec) && s.timeoutSec > 0 && s.timeoutSec <= 3600)) errors.push(`${at}: timeoutSec must be 1-3600`);
-  } else errors.push(`${at}: source.type must be "winget", "url" or "bundled"`);
+  } else if (s.type === 'odt') {
+    // Office Deployment Tool: setup.exe is verified by signer only (Microsoft re-issues it, so no
+    // hash); every value below ends up in a generated configuration.xml, hence the strict patterns.
+    unknownKeys(s, ['type', 'url', 'signer', 'product', 'channel', 'edition', 'language', 'excludeApps', 'timeoutSec'], `${at} source`);
+    if (!/^https:\/\/[^\s/]+\/\S+$/.test(s.url || '')) errors.push(`${at}: source.url must be an https:// URL`);
+    if (s.signer === undefined) errors.push(`${at}: an odt source needs signer (never run an unverified installer)`);
+    else checkRegex(s.signer, `${at} source.signer`);
+    if (!/^[A-Za-z0-9]+$/.test(s.product || '')) errors.push(`${at}: source.product must be an Office product ID (letters and digits)`);
+    if (s.channel !== undefined && !['Current', 'MonthlyEnterprise', 'SemiAnnual'].includes(s.channel)) errors.push(`${at}: source.channel must be Current, MonthlyEnterprise or SemiAnnual`);
+    if (s.edition !== undefined && !['32', '64'].includes(s.edition)) errors.push(`${at}: source.edition must be "32" or "64"`);
+    if (s.language !== undefined && !/^(MatchOS|[A-Za-z]{2,3}-[A-Za-z]{2,4})$/.test(s.language)) errors.push(`${at}: source.language must be MatchOS or a culture like en-us`);
+    if (s.excludeApps !== undefined && (!Array.isArray(s.excludeApps) || s.excludeApps.some((x) => !/^[A-Za-z0-9]+$/.test(x)))) errors.push(`${at}: source.excludeApps must be an array of app IDs (letters and digits)`);
+    if (s.timeoutSec !== undefined && !(Number.isInteger(s.timeoutSec) && s.timeoutSec > 0 && s.timeoutSec <= 3600)) errors.push(`${at}: timeoutSec must be 1-3600`);
+  } else errors.push(`${at}: source.type must be "winget", "url", "bundled" or "odt"`);
   if (a.test !== undefined && a.test !== true) errors.push(`${at}: test must be true or absent`);
 
   if (!Array.isArray(a.detect) || a.detect.length === 0) errors.push(`${at}: detect must be a non-empty array`);
@@ -129,7 +142,10 @@ function checkApp(id, a) {
         unknownKeys(d, ['type', 'displayName', 'publisher'], dat);
         checkRegex(d.displayName, `${dat}.displayName`);
         if (d.publisher !== undefined) checkRegex(d.publisher, `${dat}.publisher`);
-      } else errors.push(`${dat}: type must be "file" or "arp"`);
+      } else if (d.type === 'c2r') {
+        unknownKeys(d, ['type', 'product'], dat);
+        checkRegex(d.product, `${dat}.product`);
+      } else errors.push(`${dat}: type must be "file", "arp" or "c2r"`);
     });
   }
 
@@ -137,11 +153,14 @@ function checkApp(id, a) {
   if (u.type === 'winget') {
     unknownKeys(u, ['type'], `${at} uninstall`);
     if (s.type !== 'winget') errors.push(`${at}: uninstall type "winget" needs a winget source`);
+  } else if (u.type === 'odt') {
+    unknownKeys(u, ['type'], `${at} uninstall`);
+    if (s.type !== 'odt') errors.push(`${at}: uninstall type "odt" needs an odt source`);
   } else if (u.type === 'exe') {
     unknownKeys(u, ['type', 'path', 'args', 'timeoutSec'], `${at} uninstall`);
     if (!ENV_ROOTED.test(u.path || '')) errors.push(`${at}: uninstall.path must start with a known %ENV% root`);
     checkArgs(u.args, `${at} uninstall.args`);
-  } else errors.push(`${at}: uninstall.type must be "winget" or "exe"`);
+  } else errors.push(`${at}: uninstall.type must be "winget", "odt" or "exe"`);
 }
 
 const appIds = rawCatalog.apps || [];

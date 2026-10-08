@@ -20,6 +20,9 @@ function Test-Detected {
     foreach ($d in @($app.detect)) {
         if ($d.type -eq 'file') {
             if (Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables([string]$d.path))) { return $true }
+        } elseif ($d.type -eq 'c2r') {
+            $c2r = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration' -ErrorAction SilentlyContinue
+            if ($c2r -and $c2r.ProductReleaseIds -and ([string]$c2r.ProductReleaseIds -match $d.product)) { return $true }
         } elseif ($d.type -eq 'arp') {
             foreach ($r in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
                 if (Get-ItemProperty -Path $r -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -and $_.DisplayName -match $d.displayName }) { return $true }

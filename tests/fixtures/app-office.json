@@ -1,0 +1,5 @@
+{
+  "modules": { "app-office": {} },
+  "generateUninstall": true,
+  "_ci": { "removeApps": ["office"], "expectApp": "fresh", "expectElevated": ["app-office"] }
+}
