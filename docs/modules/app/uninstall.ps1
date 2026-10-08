@@ -19,7 +19,10 @@ function New-AppModule {
             throw "$($app.label) needs administrator permission to remove, and this step is not running with it."
         }
         if (Test-AppDetected $app) {
-            if ($app.uninstall.type -eq 'winget') {
+            if ($app.uninstall.type -eq 'odt') {
+                Invoke-AppOdt $app 'remove'
+                $code = 0
+            } elseif ($app.uninstall.type -eq 'winget') {
                 $wg = (Get-Command winget.exe -ErrorAction SilentlyContinue)
                 if (-not $wg) { throw "winget is not available, so $($app.label) can't be removed automatically." }
                 $code = Invoke-AppNative -File $wg.Source -TimeoutSec 1800 -Arguments @(

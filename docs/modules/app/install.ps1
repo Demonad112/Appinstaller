@@ -106,6 +106,7 @@ function New-AppModule {
             'winget' { Install-AppWinget $app }
             'url' { Install-AppUrl $app }
             'bundled' { Install-AppBundled $app }
+            'odt' { Invoke-AppOdt $app 'install' }
             default { throw "Unknown source type '$($app.source.type)' for $($app.label)." }
         }
         if (-not (Wait-AppDetected $app $true)) { throw "$($app.label) installer finished but the app was not found afterwards." }

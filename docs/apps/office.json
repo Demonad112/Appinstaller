@@ -1,0 +1,24 @@
+{
+  "id": "office",
+  "label": "Microsoft 365 (Word, Excel, PowerPoint, Outlook)",
+  "description": "Installs Word, Excel, PowerPoint and Outlook from Microsoft for every user on this computer; may ask for administrator permission once and downloads about 4 GB. It needs a Microsoft 365 subscription: each person signs in with their Microsoft account the first time they open an app (this setup never signs anyone in). Does nothing if Microsoft 365 is already installed, and uninstall only removes it if this setup installed it.",
+  "order": 140,
+  "scope": "machine",
+  "requires": [],
+  "source": {
+    "type": "odt",
+    "url": "https://officecdn.microsoft.com/pr/wsus/setup.exe",
+    "signer": "CN=Microsoft Corporation",
+    "product": "O365HomePremRetail",
+    "channel": "Current",
+    "edition": "64",
+    "language": "MatchOS",
+    "excludeApps": ["Access", "Groove", "Lync", "OneDrive", "OneNote", "Publisher", "Teams", "Bing"],
+    "timeoutSec": 3000
+  },
+  "detect": [
+    { "type": "c2r", "product": "O365HomePremRetail" }
+  ],
+  "uninstall": { "type": "odt" },
+  "notes": "Probed on windows-latest (PR #11): ODT setup.exe is Authenticode Valid, signer Microsoft Corporation (file changes over time, so signer-pinned, no hash). winget Microsoft.Office takes --override but installs the enterprise product and its pinned installer hash is already stale. Install 150 s / 4.3 GB; installs exactly WINWORD, EXCEL, POWERPNT, OUTLOOK with the exclusions above. HKLM ClickToRun ProductReleaseIds=O365HomePremRetail after install, key gone after Remove (104 s); only an empty Common Files\\Microsoft Shared\\ClickToRun folder remains. Not on the runner image."
+}

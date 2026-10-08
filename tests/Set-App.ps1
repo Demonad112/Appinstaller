@@ -14,6 +14,9 @@ function Test-Detected {
     foreach ($d in @($app.detect)) {
         if ($d.type -eq 'file') {
             if (Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables([string]$d.path))) { return $true }
+        } elseif ($d.type -eq 'c2r') {
+            $c2r = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration' -ErrorAction SilentlyContinue
+            if ($c2r -and $c2r.ProductReleaseIds -and ([string]$c2r.ProductReleaseIds -match $d.product)) { return $true }
         } elseif ($d.type -eq 'arp') {
             foreach ($r in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
                 if (Get-ItemProperty -Path $r -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -and $_.DisplayName -match $d.displayName }) { return $true }
@@ -30,7 +33,9 @@ function Wait-State([bool]$Want) {
 if ($State -eq 'absent') {
     if (-not (Test-Detected)) { Write-Host "$($app.label): not present (nothing to remove)."; return }
     Write-Host "Removing $($app.label) (test setup)"
-    if ($app.uninstall.type -eq 'winget') {
+    if ($app.uninstall.type -eq 'odt') {
+        throw "$($app.label) is already installed on this computer; Set-App has no odt remover (the runner image doesn't ship it)."
+    } elseif ($app.uninstall.type -eq 'winget') {
         winget uninstall --id $app.source.id --exact --silent --accept-source-agreements --disable-interactivity
     } else {
         $p = Start-Process -FilePath ([Environment]::ExpandEnvironmentVariables([string]$app.uninstall.path)) -ArgumentList @($app.uninstall.args) -PassThru -Wait

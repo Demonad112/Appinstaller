@@ -38,6 +38,11 @@ function Test-AppDetected {
         if ($d.type -eq 'file') {
             $f = [Environment]::ExpandEnvironmentVariables([string]$d.path)
             if (Test-Path -LiteralPath $f) { return $true }
+        } elseif ($d.type -eq 'c2r') {
+            # Office Click-to-Run: the installed product IDs, not just any Office file, so a
+            # different or half-removed product doesn't count.
+            $c2r = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration' -ErrorAction SilentlyContinue
+            if ($c2r -and $c2r.ProductReleaseIds -and ([string]$c2r.ProductReleaseIds -match $d.product)) { return $true }
         } elseif ($d.type -eq 'arp') {
             $roots = @(
                 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -65,6 +70,57 @@ function Wait-AppDetected {
         if ((Test-AppDetected $App) -eq $Want) { return $true }
         if ((Get-Date) -gt $deadline) { return $false }
         Start-Sleep -Seconds 2
+    }
+}
+
+# Office Deployment Tool (source.type "odt"): downloads setup.exe, requires a Valid Authenticode
+# signature from source.signer BEFORE launching it, writes a configuration.xml in %TEMP% (deleted
+# afterwards) and runs `setup.exe /configure`. -Mode install adds source.product (minus excludeApps);
+# -Mode remove removes it. The catalog schema restricts every interpolated value to safe characters.
+function Invoke-AppOdt {
+    param($App, [ValidateSet('install', 'remove')][string]$Mode)
+    $s = $App.source
+    $id = [guid]::NewGuid().ToString('N')
+    $exe = Join-Path $env:TEMP "Appinstaller-$id-setup.exe"
+    $cfgFile = Join-Path $env:TEMP "Appinstaller-$id-office.xml"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+        Write-Log "Downloading the Office Deployment Tool from $($s.url)"
+        Invoke-WebRequest -Uri $s.url -OutFile $exe -UseBasicParsing
+        $sig = Get-AuthenticodeSignature -FilePath $exe
+        $subject = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '' }
+        Write-Log "Office Deployment Tool signature: $($sig.Status) / $subject"
+        if ($sig.Status -ne 'Valid' -or $subject -notmatch $s.signer) {
+            throw "The Office Deployment Tool failed verification (signature $($sig.Status), '$subject'); nothing was changed."
+        }
+        Unblock-File -LiteralPath $exe -ErrorAction SilentlyContinue
+        $lines = @('<Configuration>')
+        if ($Mode -eq 'install') {
+            $edition = if ($s.edition) { [string]$s.edition } else { '64' }
+            $channel = if ($s.channel) { [string]$s.channel } else { 'Current' }
+            $lang = if ($s.language) { [string]$s.language } else { 'MatchOS' }
+            $lines += "  <Add OfficeClientEdition=`"$edition`" Channel=`"$channel`">"
+            $lines += "    <Product ID=`"$($s.product)`">"
+            $lines += "      <Language ID=`"$lang`" />"
+            foreach ($x in @($s.excludeApps)) { if ($x) { $lines += "      <ExcludeApp ID=`"$x`" />" } }
+            $lines += '    </Product>'
+            $lines += '  </Add>'
+            $lines += '  <Updates Enabled="TRUE" />'
+        } else {
+            $lines += '  <Remove All="FALSE">'
+            $lines += "    <Product ID=`"$($s.product)`" />"
+            $lines += '  </Remove>'
+        }
+        $lines += '  <Display Level="None" AcceptEULA="TRUE" />'
+        $lines += '  <Property Name="FORCEAPPSHUTDOWN" Value="TRUE" />'
+        $lines += '</Configuration>'
+        Set-Content -LiteralPath $cfgFile -Value $lines -Encoding UTF8
+        $timeout = if ($s.timeoutSec) { [int]$s.timeoutSec } else { 3000 }
+        $code = Invoke-AppNative -File $exe -Arguments @('/configure', ('"' + $cfgFile + '"')) -TimeoutSec $timeout
+        if ($code -ne 0 -and $code -ne 3010) { throw "The Office Deployment Tool ($Mode) exited with code $code" }
+    } finally {
+        Remove-Item -LiteralPath $exe, $cfgFile -Force -ErrorAction SilentlyContinue
     }
 }
 
