@@ -87,6 +87,32 @@
       ]
     },
     {
+      "id": "chrome-data",
+      "label": "Chrome bookmarks (from another computer)",
+      "description": "Puts bookmarks you saved with Capture-Profile.cmd into Chrome. Bookmarks only: never passwords, cookies, history or sign-in. Chrome must be closed while this runs; an existing bookmark list is kept unless you tick the box below.",
+      "order": 35,
+      "scope": "user",
+      "requires": [
+        "chrome"
+      ],
+      "options": [
+        {
+          "key": "bookmarks",
+          "type": "file",
+          "label": "Bookmarks file saved by Capture-Profile.cmd",
+          "hint": "Run Capture-Profile.cmd on the old computer; it puts Bookmarks-*.json files on the Desktop. Choose one here.",
+          "required": true,
+          "fileName": "Bookmarks.json"
+        },
+        {
+          "key": "replaceExisting",
+          "type": "checkbox",
+          "label": "Replace the bookmarks Chrome already has (a copy is kept so uninstall can put them back)",
+          "default": false
+        }
+      ]
+    },
+    {
       "id": "test-secret",
       "label": "Test: secret option (CI only)",
       "description": "Hidden test item. Stores only a fingerprint of the secret, to prove secrets reach the computer through the download's files folder and never appear in the setup file or its log.",

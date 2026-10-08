@@ -49,6 +49,11 @@
     "uninstall": "3a89bf722633ac4abf41bb4de659928c0684280c1f0f50d789d8d29cde9bfab7",
     "zip": null
   },
+  "chrome-data": {
+    "install": "80ac081a3c5182c7859e3569e145ad1b989162e1b2b7bae83042d141a0e7a6f2",
+    "uninstall": "5aecfb5162d9cb938a56d8ee966d927badd21a36e267ac6cddc23737219e35e6",
+    "zip": "fcb656b5963058715e45d3f9be046b693dacce2ede750ec05579facc653021ba"
+  },
   "chrome-fresh": {
     "install": "ace8ba0544dee93f320369030c70d84568e6812fac013df47fb70f8f1280797b",
     "uninstall": "440acc9d1ebde27d1430191db78c0e0082c2075883001cd16ae16ff0ae28c07f",
