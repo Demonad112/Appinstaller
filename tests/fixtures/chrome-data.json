@@ -1,0 +1,11 @@
+{
+  "modules": {
+    "chrome": {},
+    "chrome-data": { "bookmarks": "tests/assets/Bookmarks-test.json", "replaceExisting": false }
+  },
+  "generateUninstall": true,
+  "_ci": {
+    "removeChrome": true,
+    "expectChrome": "direct"
+  }
+}

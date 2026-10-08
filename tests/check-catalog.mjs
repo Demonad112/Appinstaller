@@ -225,6 +225,17 @@ const sha256 = (t) => createHash('sha256').update(t, 'utf8').digest('hex');
 const goldenPath = path.join(root, 'tests/golden.json');
 const updateGoldens = process.argv.includes('--update-goldens');
 const golden = existsSync(goldenPath) ? JSON.parse(readFileSync(goldenPath, 'utf8')) : {};
+// Capture-Profile.cmd is a static helper the site links to. It must keep the one-line polyglot
+// header, and must never name the Chrome files that hold passwords, cookies or sign-in state.
+{
+  const cap = readFileSync(path.join(root, 'docs/Capture-Profile.cmd'), 'utf8');
+  if (!/^@set "APPI_ARGS=%\*" & @set "SELF=%~f0" & .*& @if errorlevel 1 \(exit \/b 1\) else \(exit \/b 0\)\r?\n<#PSBEGIN#>\r?\n/.test(cap)) {
+    errors.push('docs/Capture-Profile.cmd: polyglot header must be one line ending in the errorlevel passthrough');
+  }
+  const forbidden = cap.match(/Login Data|Cookies|Web Data|Local State|Network[\\/]|History|Preferences|Extensions/g);
+  if (forbidden) errors.push(`docs/Capture-Profile.cmd must only read Bookmarks, but mentions ${[...new Set(forbidden)].join(', ')}`);
+}
+
 const newGolden = {};
 
 const commonText = readFileSync(path.join(root, 'docs/core/common.ps1'), 'utf8');

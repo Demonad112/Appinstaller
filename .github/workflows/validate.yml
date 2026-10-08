@@ -61,6 +61,7 @@ jobs:
           - chrome-present
           - chrome-fresh
           - chrome-blocked
+          - chrome-data
           - default-icon
           - machine-scope
           - run-lock
