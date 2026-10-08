@@ -1,0 +1,38 @@
+name: Probe Office (ODT)
+
+# Admission tool for batch 5 (see tools/Probe-Office.ps1): records what winget Microsoft.Office and the
+# Office Deployment Tool really do on windows-latest. Run it from the Actions tab (workflow_dispatch)
+# with install=true for the full install/remove cycle (multi-GB, slow); pull requests that touch the
+# probe run the full cycle too.
+
+on:
+  pull_request:
+    paths:
+      - 'tools/Probe-Office.ps1'
+      - '.github/workflows/probe-office.yml'
+  workflow_dispatch:
+    inputs:
+      install:
+        description: 'Run the full install -> detect -> remove cycle'
+        type: boolean
+        default: true
+      product:
+        description: 'Office product ID'
+        required: false
+        default: 'O365HomePremRetail'
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe
+        shell: pwsh
+        env:
+          P_PRODUCT: ${{ github.event.inputs.product || 'O365HomePremRetail' }}
+          # a PR touching the probe runs the full cycle (the workflow can't be dispatched before it is on main)
+          P_INSTALL: ${{ github.event_name == 'pull_request' && 'true' || github.event.inputs.install }}
+        run: |
+          if ($env:P_INSTALL -eq 'true') { ./tools/Probe-Office.ps1 -Product $env:P_PRODUCT -Install }
+          else { ./tools/Probe-Office.ps1 -Product $env:P_PRODUCT }
